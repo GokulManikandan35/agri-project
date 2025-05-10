@@ -15,17 +15,17 @@ export default function Index() {
         
         if (isAuthenticated === 'true') {
           // Route to the tabbed layout instead of directly to Home screen
-          router.replace('/(tabs)/home');
+          router.replace('farmer/(tabs)/home');
         } else {
           // If not authenticated, check if PIN exists
           const userPin = await AsyncStorage.getItem('userPin');
           
           // Always go to login - it will either require PIN entry or PIN setup
-          router.replace('/auth/login');
+          router.replace('farmer/auth/login');
         }
       } catch (error) {
         console.error('Error checking auth status:', error);
-        router.replace('/auth/login');
+        router.replace('farmer/auth/login');
       } finally {
         setIsLoading(false);
       }

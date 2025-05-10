@@ -65,7 +65,7 @@ export default function RootLayout() {
 
   return (
     <>
-      <StatusBar style="auto" />
+      <StatusBar style="dark" />
       <Stack screenOptions={{ 
         headerShown: false, // This hides the header with the path
         animation: 'fade',

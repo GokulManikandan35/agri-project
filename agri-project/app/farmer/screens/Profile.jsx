@@ -21,7 +21,14 @@ const Profile = () => {
   const [language, setLanguage] = useState('English');
   
   const handleLogin = () => {
-    router.push('/auth/login');
+    // Debug: check if router exists and has push
+    if (router && typeof router.push === 'function') {
+      router.push('farmer/auth/login');
+    } else {
+      console.log('Router not available or push not a function', router);
+      // Optionally, fallback to navigation if using React Navigation:
+      // navigation.navigate('Login');
+    }
   };
   
   const handleSignup = () => {
@@ -70,7 +77,7 @@ const Profile = () => {
       entering={FadeInDown.delay(200).duration(600)}
     >
       <Image 
-        source={require('../../assets/images/farmer1.jpg')} 
+        source={require('../../../assets/images/farmer1.jpg')} 
         style={styles.userImage} 
       />
       
