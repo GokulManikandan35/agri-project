@@ -14,10 +14,10 @@ import Animated, { FadeIn } from "react-native-reanimated";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Import components
-import UserTypeSelector from './components/UserTypeSelector';
-import SignupForm from './components/SignupForm';
-import PageHeader from './components/PageHeader';
-import LoginLink from './components/LoginLink';
+// import UserTypeSelector from './components/UserTypeSelector';
+// import SignupForm from './components/SignupForm';
+// import PageHeader from './components/PageHeader';
+// import LoginLink from './components/LoginLink';
 
 const Signup = () => {
   const router = useRouter();
@@ -74,7 +74,7 @@ const Signup = () => {
             style={styles.logoContainer}
           >
             <Image
-              source={require("../../assets/images/agri_logo.jpg")}
+              source={require("../../../assets/images/agri_logo.jpg")}
               style={styles.logo}
               resizeMode="contain"
             />
