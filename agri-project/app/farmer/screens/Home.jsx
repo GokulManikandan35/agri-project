@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons"; // For calendar icon
 import LandPreparationForm from "../components/LandPreparationForm";
@@ -19,6 +20,8 @@ const getCurrentDate = () => {
 };
 
 export default function HomeScreen() {
+  const [seedVariety, setSeedVariety] = useState('');
+
   return (
     <ScrollView
       style={styles.screen}
@@ -26,9 +29,15 @@ export default function HomeScreen() {
     >
       {/* Header */}
       <View style={styles.headerContainer}>
-        <View>
-          <Text style={styles.welcomeText}>Welcome back,</Text>
-          <Text style={styles.farmerText}>Munusamy</Text>
+        <View style={styles.profileContainer}>
+          <Image
+            style={styles.profileImage}
+            source={require('../../../assets/images/farmer1.jpg')}
+          />
+          <View>
+            <Text style={styles.welcomeText}>Welcome back,</Text>
+            <Text style={styles.farmerText}>Munusamy</Text>
+          </View>
         </View>
         <View style={styles.dateChip}>
           <Ionicons name="calendar-outline" size={16} color="gray" />
@@ -45,10 +54,10 @@ export default function HomeScreen() {
 
       {/* Forms */}
       <LandPreparationForm />
-      <TransplantingForm />
-      <FertilizerPesticideForm />
-      <HarvestDryingPackingForm />
-      <PackingForm /> {/* Add the new packing form */}
+      <TransplantingForm seedVariety={seedVariety} setSeedVariety={setSeedVariety} />
+      <FertilizerPesticideForm seedVariety={seedVariety} />
+      <HarvestDryingPackingForm seedVariety={seedVariety} />
+      <PackingForm seedVariety={seedVariety} />
     </ScrollView>
   );
 }
@@ -64,6 +73,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginTop: 40,
+  },
+  profileContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  profileImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 10,
   },
   welcomeText: {
     fontSize: 16,
