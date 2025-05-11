@@ -1,34 +1,66 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated, ScrollView, Modal } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
+import { Picker } from '@react-native-picker/picker';
 import useAccordionAnimation from '../hooks/useAccordionAnimation';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const fertilizerTypes = ['K1', 'K2'];
+const seedVarieties = ['K1', 'K2'];
 
-export default function TransplantingCard() {
+export default function TransplantingForm({ seedVariety, setSeedVariety }) {
   const [expanded, setExpanded] = useState(false);
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [selectedFertilizer, setSelectedFertilizer] = useState(null);
   const [quantity, setQuantity] = useState('');
-  const [photoUri, setPhotoUri] = useState(null);
+  const [photoUris, setPhotoUris] = useState([]);
   const [isSaved, setIsSaved] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   // Use the custom accordion animation hook
   const { rotateArrow, getBodyStyle } = useAccordionAnimation(expanded);
 
-  const handleSave = () => {
+  // Load saved data from AsyncStorage on component mount
+  useEffect(() => {
+    AsyncStorage.getItem('TransplantingFormData')
+      .then(data => {
+        if (data) {
+          const saved = JSON.parse(data);
+          setDate(new Date(saved.date));
+          setSeedVariety(saved.seedVariety);
+          setQuantity(saved.quantity);
+          setPhotoUris(saved.photoUris || []);
+          setIsSaved(saved.isSaved);
+          console.log("Loaded TransplantingFormData", saved);
+        }
+      })
+      .catch(err => console.log("Error loading TransplantingFormData", err));
+  }, []);
+
+  // Helper function to compare only date part (ignoring time)
+  function isSameDay(date1, date2) {
+    return (
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate()
+    );
+  }
+
+  const handleSave = async () => {
     try {
       if (!quantity || isNaN(parseFloat(quantity))) {
         throw new Error("Please enter a valid numeric quantity.");
       }
-      if (!selectedFertilizer) {
-        throw new Error("Please select a fertilizer type.");
+      if (!seedVariety) {
+        throw new Error("Please select a seed variety.");
       }
       setIsSaved(true);
-      Alert.alert("Success", "Data saved successfully!");
+      await AsyncStorage.setItem('TransplantingFormData', JSON.stringify({
+        date, seedVariety, quantity, photoUris, isSaved: true
+      }));
+      Alert.alert("Success", "Transplanting event recorded successfully.");
       setExpanded(false);
     } catch (error) {
       Alert.alert("Save Error", error.message);
@@ -44,9 +76,9 @@ export default function TransplantingCard() {
         { text: "Yes", onPress: () => {
             // Reset form fields to initial values
             setDate(new Date());
-            setSelectedFertilizer(null);
+            setSeedVariety('');
             setQuantity('');
-            setPhotoUri(null);
+            setPhotoUris([]);
             setIsSaved(false);
             setExpanded(false);
         }}
@@ -66,7 +98,7 @@ export default function TransplantingCard() {
         quality: 0.7,
       });
       if (!result.canceled) {
-        setPhotoUri(result.assets[0].uri);
+        setPhotoUris([...photoUris, result.assets[0].uri]);
         Alert.alert("Image Captured", "Your photo has been captured successfully.");
       }
     } catch (error) {
@@ -74,8 +106,8 @@ export default function TransplantingCard() {
     }
   };
 
-  const today = new Date().toDateString();
-  const isCompleted = isSaved && date.toDateString() === today;
+  const today = new Date();
+  const isCompleted = isSaved && isSameDay(date, today);
 
   return (
     <View style={styles.card}>
@@ -113,19 +145,20 @@ export default function TransplantingCard() {
             />
           )}
 
-          <Text style={styles.label}>Seed Type</Text>
-          <View style={styles.tags}>
-            {fertilizerTypes.map((type) => (
-              <TouchableOpacity
-                key={type}
-                onPress={() => setSelectedFertilizer(type)}
-                style={[styles.tag, selectedFertilizer === type && styles.selectedTag]}
-              >
-                <Text style={[styles.tagText, selectedFertilizer === type && styles.selectedTagText]}>
-                  {type}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <Text style={styles.label}>Seed Variety</Text>
+          <View style={styles.dropdownContainer}>
+            <Picker
+              selectedValue={seedVariety}
+              onValueChange={(itemValue) => setSeedVariety(itemValue)}
+              style={styles.picker}
+              dropdownIconColor="#4CAF50"
+              mode="dropdown"
+            >
+              <Picker.Item label="Select Seed Variety" value="" color="#888" />
+              {seedVarieties.map((type) => (
+                <Picker.Item key={type} label={type} value={type} color="#222" />
+              ))}
+            </Picker>
           </View>
 
           <Text style={styles.label}>Quantity (Kg)</Text>
@@ -138,13 +171,41 @@ export default function TransplantingCard() {
           />
 
           <Text style={styles.label}>Photos (Geo-tagged)</Text>
-          <View style={styles.imageBox}>
-            {photoUri ? (
-              <Image source={{ uri: photoUri }} style={styles.photo} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+            {photoUris.length === 0 ? (
+              <View style={styles.squarePlaceholder}>
+                <Text style={styles.imagePlaceholder}>No images captured</Text>
+              </View>
             ) : (
-              <Text style={styles.imagePlaceholder}>Image Preview</Text>
+              photoUris.map((uri, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.squareImageBox}
+                  onPress={() => {
+                    setSelectedImage(uri);
+                    setModalVisible(true);
+                  }}
+                >
+                  <Image source={{ uri }} style={styles.squareImage} />
+                </TouchableOpacity>
+              ))
             )}
-          </View>
+          </ScrollView>
+          <Modal
+            visible={modalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setModalVisible(false)}
+          >
+            <View style={styles.modalContainer}>
+              <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
+                <Ionicons name="close-circle" size={40} color="#fff" />
+              </TouchableOpacity>
+              {selectedImage && (
+                <Image source={{ uri: selectedImage }} style={styles.modalImage} resizeMode="contain" />
+              )}
+            </View>
+          </Modal>
 
           <TouchableOpacity style={styles.captureButton} onPress={handleCaptureImage}>
             <Text style={styles.captureButtonText}>Capture Image</Text>
@@ -235,6 +296,23 @@ const styles = StyleSheet.create({
   dateText: {
     fontWeight: '600',
     color: '#2E7D32',
+  },
+  dropdownContainer: {
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderRadius: 8,
+    marginTop: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+    backgroundColor: '#F8FFF8',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  picker: {
+    height: 54,
+    width: '100%',
+    color: '#222',
+    backgroundColor: 'transparent',
   },
   tags: {
     flexDirection: 'row',
@@ -336,5 +414,41 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#4CAF50',
     fontWeight: '600',
+  },
+  squarePlaceholder: {
+    width: 100,
+    height: 100,
+    borderWidth: 1,
+    borderColor: '#CCC',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+  },
+  squareImageBox: {
+    width: 100,
+    height: 100,
+    marginRight: 8,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  squareImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalClose: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+  },
+  modalImage: {
+    width: '90%',
+    height: '70%',
   },
 });

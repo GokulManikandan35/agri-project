@@ -1,45 +1,79 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated, ScrollView, Modal } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import useAccordionAnimation from '../hooks/useAccordionAnimation';
+import { Picker } from '@react-native-picker/picker';
+import ImageGallery from './ImageGallery';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Constants
 const VARIETIES = ["K1", "K2"];
 const EVENT_TYPES = ["Harvest"];
+const seedVarieties = ["K1", "K2"];
 
-export default function HarvestDryingPackingForm() {
+export default function HarvestDryingPackingForm({ seedVariety }) {
   // State variables
   const [expanded, setExpanded] = useState(false);
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedVariety, setSelectedVariety] = useState('');
-  const [photoUri, setPhotoUri] = useState(null);
+  const [photoUris, setPhotoUris] = useState([]);
   const [isSaved, setIsSaved] = useState(false);
   const [records, setRecords] = useState([]);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   // Use the custom accordion animation hook
   const { rotateArrow, getBodyStyle } = useAccordionAnimation(expanded);
 
+  // Load saved data from AsyncStorage
+  useEffect(() => {
+    AsyncStorage.getItem('HarvestDryingPackingFormData')
+      .then(data => {
+        if (data) {
+          const saved = JSON.parse(data);
+          setDate(new Date(saved.date));
+          setSelectedVariety(saved.seedVariety);
+          setPhotoUris(saved.photoUris || []);
+          setIsSaved(saved.isSaved);
+          console.log("Loaded saved Harvest:", saved);
+        }
+      })
+      .catch(err => console.log("Error loading HarvestDryingPackingFormData", err));
+  }, []);
+
+  // Helper function to compare only date part (ignoring time)
+  function isSameDay(date1, date2) {
+    return (
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate()
+    );
+  }
+
   // Function to handle saving data
-  const handleSave = () => {
+  const handleSave = async () => {
     try {
       // Validation
-      if (!selectedVariety) throw new Error("Please select a seed variety.");
-      if (!photoUri) throw new Error("Please capture a photo of the harvest.");
+      // if (!selectedVariety) throw new Error("Please select a seed variety.");
+      if (photoUris.length === 0) throw new Error("Please capture at least one photo of the harvest.");
 
       // Create record object
       const newRecord = {
         id: Date.now(),
         date: date.toDateString(),
         variety: selectedVariety,
-        photoUri,
+        photoUris,
         timestamp: new Date(),
       };
 
       setRecords([...records, newRecord]);
       setIsSaved(true);
+      await AsyncStorage.setItem('HarvestDryingPackingFormData', JSON.stringify({
+        date, seedVariety: selectedVariety, photoUris, isSaved: true
+      }));
       Alert.alert("Success", "Harvest event recorded successfully.");
       setExpanded(false);
       
@@ -54,7 +88,7 @@ export default function HarvestDryingPackingForm() {
   const resetForm = () => {
     setSelectedVariety('');
     setDate(new Date());
-    setPhotoUri(null);
+    setPhotoUris([]);
   };
 
   // Function to handle cancel
@@ -79,7 +113,7 @@ export default function HarvestDryingPackingForm() {
     try {
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
       if (permissionResult.status !== 'granted') {
-        Alert.alert("Permission Denied", "Camera permission is required to capture an image.");
+        Alert.alert("Permission Denied", "Camera permission is required.");
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
@@ -87,17 +121,17 @@ export default function HarvestDryingPackingForm() {
         quality: 0.7,
       });
       if (!result.canceled) {
-        setPhotoUri(result.assets[0].uri);
-        Alert.alert("Image Captured", "Your photo has been captured successfully.");
+        setPhotoUris([...photoUris, result.assets[0].uri]);
+        Alert.alert("Success", "Image captured successfully!");
       }
     } catch (error) {
-      Alert.alert("Capture Error", "Failed to capture image: " + error.message);
+      Alert.alert("Error", "Failed to capture image: " + error.message);
     }
   };
 
   // Check if completed today
-  const today = new Date().toDateString();
-  const isCompleted = isSaved && date.toDateString() === today;
+  const today = new Date();
+  const isCompleted = isSaved && isSameDay(date, today);
 
   return (
     <View style={styles.card}>
@@ -122,18 +156,10 @@ export default function HarvestDryingPackingForm() {
         <Animated.View style={[styles.body, getBodyStyle()]}>
           {/* Seed Variety Selection */}
           <Text style={styles.label}>Seed Variety</Text>
-          <View style={styles.tags}>
-            {VARIETIES.map((variety) => (
-              <TouchableOpacity
-                key={variety}
-                onPress={() => setSelectedVariety(variety)}
-                style={[styles.tag, selectedVariety === variety && styles.selectedTag]}
-              >
-                <Text style={[styles.tagText, selectedVariety === variety && styles.selectedTagText]}>
-                  {variety}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.disabledField}>
+            <Text style={styles.disabledText}>
+              {seedVariety ? seedVariety : "Not selected"}
+            </Text>
           </View>
 
           {/* Date Selection */}
@@ -156,13 +182,41 @@ export default function HarvestDryingPackingForm() {
 
           {/* Photo Capture */}
           <Text style={styles.label}>Photos (Geo-tagged)</Text>
-          <View style={styles.imageBox}>
-            {photoUri ? (
-              <Image source={{ uri: photoUri }} style={styles.photo} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+            {photoUris.length === 0 ? (
+              <View style={styles.squarePlaceholder}>
+                <Text style={styles.imagePlaceholder}>No images captured</Text>
+              </View>
             ) : (
-              <Text style={styles.imagePlaceholder}>Image Preview</Text>
+              photoUris.map((uri, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.squareImageBox}
+                  onPress={() => {
+                    setSelectedImage(uri);
+                    setModalVisible(true);
+                  }}
+                >
+                  <Image source={{ uri }} style={styles.squareImage} />
+                </TouchableOpacity>
+              ))
             )}
-          </View>
+          </ScrollView>
+          <Modal
+            visible={modalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setModalVisible(false)}
+          >
+            <View style={styles.modalContainer}>
+              <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
+                <Ionicons name="close-circle" size={40} color="#fff" />
+              </TouchableOpacity>
+              {selectedImage && (
+                <Image source={{ uri: selectedImage }} style={styles.modalImage} resizeMode="contain" />
+              )}
+            </View>
+          </Modal>
 
           <TouchableOpacity style={styles.captureButton} onPress={handleCaptureImage}>
             <Text style={styles.captureButtonText}>Capture Image</Text>
@@ -404,5 +458,71 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#4CAF50',
     fontWeight: '600',
+  },
+  dropdownContainer: {
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderRadius: 8,
+    marginTop: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+    backgroundColor: '#F8FFF8',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  picker: {
+    height: 54,
+    width: '100%',
+    color: '#222',
+    backgroundColor: 'transparent',
+  },
+  disabledField: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 6,
+  },
+  disabledText: {
+    color: '#666',
+    fontSize: 15,
+  },
+  squarePlaceholder: {
+    width: 100,
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CCC',
+  },
+  squareImageBox: {
+    width: 100,
+    height: 100,
+    marginRight: 8,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  squareImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalClose: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 1,
+  },
+  modalImage: {
+    width: '90%',
+    height: '70%',
   },
 });

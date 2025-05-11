@@ -11,20 +11,24 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import { useNavigation } from '@react-navigation/native';
 
-// Mock data - replace with actual API calls in production
+// Replace dummy data with real farmer details and remove lots
 const MOCK_FARMERS = [
-  { id: 'F001', name: 'John Doe', location: 'Karnataka', lots: [{ id: 'L001', type: 'Wheat' }, { id: 'L002', type: 'Rice' }] },
-  { id: 'F002', name: 'Jane Smith', location: 'Maharashtra', lots: [{ id: 'L003', type: 'Maize' }] },
-  { id: 'F003', name: 'Amit Patel', location: 'Gujarat', lots: [{ id: 'L004', type: 'Cotton' }, { id: 'L005', type: 'Groundnut' }] },
-  { id: 'F004', name: 'Priya Singh', location: 'Punjab', lots: [{ id: 'L006', type: 'Rice' }] },
-  { id: 'F005', name: 'Rajesh Kumar', location: 'Haryana', lots: [{ id: 'L007', type: 'Wheat' }] },
-  { id: 'F006', name: 'Anita Desai', location: 'Tamil Nadu', lots: [{ id: 'L008', type: 'Sugarcane' }] },
-  { id: 'F007', name: 'Suresh Reddy', location: 'Andhra Pradesh', lots: [{ id: 'L009', type: 'Rice' }, { id: 'L010', type: 'Cotton' }] },
-  { id: 'F008', name: 'Meena Kumari', location: 'Rajasthan', lots: [{ id: 'L011', type: 'Millet' }] },
+  { id: 'M001', name: 'Munusamy', location: 'Virudhunagar' }
 ];
 
+const getCurrentDate = () => {
+  const date = new Date();
+  return date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+};
+
 const FPOHomeScreen = () => {
+  const navigation = useNavigation();
   const [searchQuery, setSearchQuery] = useState('');
   const [farmers, setFarmers] = useState(MOCK_FARMERS);
   const [filteredFarmers, setFilteredFarmers] = useState(MOCK_FARMERS);
@@ -53,13 +57,6 @@ const FPOHomeScreen = () => {
         farmer.id.toLowerCase().includes(lowerCaseQuery)
       );
       results = [...results, ...idResults];
-    }
-
-    if (selectedFilter === 'all' || selectedFilter === 'lot') {
-      const lotResults = farmers.filter(farmer => 
-        farmer.lots.some(lot => lot.id.toLowerCase().includes(lowerCaseQuery))
-      );
-      results = [...results, ...lotResults];
     }
 
     // Remove duplicates
@@ -92,7 +89,7 @@ const FPOHomeScreen = () => {
   }, []);
 
   const renderFarmerItem = ({ item }) => (
-    <TouchableOpacity style={styles.farmerCard}>
+    <TouchableOpacity style={styles.farmerCard} onPress={() => navigation.navigate('fpo/screens/FarmerDetailsPage')}>
       <View style={styles.farmerHeader}>
         <View style={styles.farmerAvatar}>
           <Text style={styles.avatarText}>{item.name.charAt(0)}</Text>
@@ -103,17 +100,6 @@ const FPOHomeScreen = () => {
           <Text style={styles.farmerLocation}>{item.location}</Text>
         </View>
         <Ionicons name="chevron-forward" size={24} color="#4A8D3D" />
-      </View>
-      
-      <View style={styles.lotsContainer}>
-        <Text style={styles.lotsTitle}>Lots:</Text>
-        <View style={styles.lotsWrapper}>
-          {item.lots.map(lot => (
-            <View key={lot.id} style={styles.lotTag}>
-              <Text style={styles.lotText}>{lot.id} - {lot.type}</Text>
-            </View>
-          ))}
-        </View>
       </View>
     </TouchableOpacity>
   );
@@ -141,17 +127,25 @@ const FPOHomeScreen = () => {
     <View style={styles.container}>
       <StatusBar style="dark" />
       
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>FPO Dashboard</Text>
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="notifications-outline" size={24} color="#333" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="person-circle-outline" size={24} color="#333" />
-          </TouchableOpacity>
+      {/* Header */}
+      <View style={styles.headerContainer}>
+        <View style={styles.profileContainer}>
+          <Image
+            style={styles.profileImage}
+            source={require('../../../assets/images/farmer1.jpg')}
+          />
+          <View>
+            <Text style={styles.welcomeText}>Welcome back,</Text>
+            <Text style={styles.farmerText}>Munusamy</Text>
+          </View>
+        </View>
+        <View style={styles.dateChip}>
+          <Ionicons name="calendar-outline" size={16} color="gray" />
+          <Text style={styles.dateText}>{getCurrentDate()}</Text>
         </View>
       </View>
+      {/* New divider */}
+      <View style={styles.divider} />
 
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
@@ -176,7 +170,6 @@ const FPOHomeScreen = () => {
           {renderFilterButton('All', 'all')}
           {renderFilterButton('Name', 'name')}
           {renderFilterButton('ID', 'id')}
-          {renderFilterButton('Lot', 'lot')}
         </View>
       </View>
 
@@ -206,7 +199,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  header: {
+  headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -217,17 +210,42 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
-  headerTitle: {
-    fontSize: 20,
+  profileContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  profileImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 12,
+  },
+  welcomeText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  farmerText: {
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
   },
-  headerRight: {
+  dateChip: {
     flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
-  iconButton: {
-    padding: 8,
-    marginLeft: 8,
+  dateText: {
+    fontSize: 12,
+    color: 'gray',
+    marginLeft: 6,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#eee',
+    marginHorizontal: 16,
   },
   searchContainer: {
     padding: 16,
@@ -335,35 +353,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 2,
-  },
-  lotsContainer: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  lotsTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-    marginBottom: 6,
-  },
-  lotsWrapper: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  lotTag: {
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginRight: 8,
-    marginBottom: 4,
-  },
-  lotText: {
-    color: '#4A8D3D',
-    fontSize: 12,
-    fontWeight: '500',
   },
   loader: {
     flex: 1,

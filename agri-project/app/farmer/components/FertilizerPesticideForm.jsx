@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated, ScrollView, Modal } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import useAccordionAnimation from '../hooks/useAccordionAnimation';
+import { Picker } from '@react-native-picker/picker';
+import ImageGallery from './ImageGallery';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AppTypes = ["Fertilizer", "Pesticide"];
-const SeedVarieties = ["K1", "K2"]; // Added seed varieties
+const seedVarieties = ["K1", "K2"];
 
 // Add farm calendar event tracking
 const getCurrentEventStatus = (date) => {
@@ -52,16 +55,17 @@ const getCurrentEventStatus = (date) => {
   return null;
 };
 
-export default function FertilizerPesticideForm() {
+export default function FertilizerPesticideForm({ seedVariety }) {
   const [expanded, setExpanded] = useState(false);
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedType, setSelectedType] = useState('');
-  const [selectedSeedVariety, setSelectedSeedVariety] = useState(''); // Added state for seed variety
   const [quantity, setQuantity] = useState('');
-  const [photoUri, setPhotoUri] = useState(null);
+  const [photoUris, setPhotoUris] = useState([]);
   const [isSaved, setIsSaved] = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   // Use the custom accordion animation hook
   const { rotateArrow, getBodyStyle } = useAccordionAnimation(expanded);
@@ -71,27 +75,54 @@ export default function FertilizerPesticideForm() {
     setCurrentEvent(status);
   }, []);
 
-  const handleSave = () => {
+  useEffect(() => {
+    AsyncStorage.getItem('FertilizerPesticideFormData')
+      .then(data => {
+        if (data) {
+          const saved = JSON.parse(data);
+          setDate(new Date(saved.date));
+          setSelectedType(saved.selectedType);
+          setQuantity(saved.quantity);
+          setPhotoUris(saved.photoUris || []);
+          setIsSaved(saved.isSaved);
+          console.log("Loaded saved FertilizerPesticideFormData", saved);
+        }
+      })
+      .catch(err => console.log("Error loading FertilizerPesticideFormData", err));
+  }, []);
+
+  // Helper function to compare only date part (ignoring time)
+  function isSameDay(date1, date2) {
+    return (
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate()
+    );
+  }
+
+  const handleSave = async () => {
     try {
       if (!selectedType) throw new Error("Select application type.");
-      if (!selectedSeedVariety) throw new Error("Select seed variety."); // Added validation
+      if (!seedVariety) throw new Error("Select seed variety.");
       if (!quantity || isNaN(parseFloat(quantity)))
         throw new Error("Enter valid quantity.");
-      if (!photoUri) throw new Error("Capture a photo.");
+      if (photoUris.length === 0) throw new Error("Capture a photo.");
       setIsSaved(true);
-      Alert.alert("Success", "Event saved.");
+      await AsyncStorage.setItem('FertilizerPesticideFormData', JSON.stringify({
+        selectedType, seedVariety, date, quantity, photoUris, isSaved: true
+      }));
+      Alert.alert("Success", "Event recorded successfully.");
       setExpanded(false);
-    } catch (e) {
-      Alert.alert("Error", e.message);
+    } catch (error) {
+      Alert.alert("Error", error.message);
     }
   };
 
   const handleCancel = () => {
     setDate(new Date());
     setSelectedType('');
-    setSelectedSeedVariety(''); // Reset seed variety
     setQuantity('');
-    setPhotoUri(null);
+    setPhotoUris([]);
     setIsSaved(false);
     setExpanded(false);
   };
@@ -100,11 +131,14 @@ export default function FertilizerPesticideForm() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (perm.status !== "granted") return Alert.alert("Permission needed");
     const res = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-    if (!res.canceled) setPhotoUri(res.assets[0].uri);
+    if (!res.canceled) {
+      setPhotoUris([...photoUris, res.assets[0].uri]);
+      Alert.alert("Success", "Image captured successfully!");
+    }
   };
 
-  const today = new Date().toDateString();
-  const isCompleted = isSaved && date.toDateString() === today;
+  const today = new Date();
+  const isCompleted = isSaved && isSameDay(date, today);
 
   return (
     <View style={styles.card}>
@@ -145,25 +179,11 @@ export default function FertilizerPesticideForm() {
             ))}
           </View>
 
-          {/* Added Seed Variety Selection */}
           <Text style={styles.label}>Seed Variety</Text>
-          <View style={styles.tags}>
-            {SeedVarieties.map((variety) => (
-              <TouchableOpacity
-                key={variety}
-                onPress={() => setSelectedSeedVariety(variety)}
-                style={[styles.tag, selectedSeedVariety === variety && styles.selectedTag]}
-              >
-                <Text
-                  style={[
-                    styles.tagText,
-                    selectedSeedVariety === variety && styles.selectedTagText,
-                  ]}
-                >
-                  {variety}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.disabledField}>
+            <Text style={styles.disabledText}>
+              {seedVariety ? seedVariety : "Not selected"}
+            </Text>
           </View>
 
           <Text style={styles.label}>Date of Application</Text>
@@ -198,13 +218,42 @@ export default function FertilizerPesticideForm() {
           />
 
           <Text style={styles.label}>Photo (Geo‑tagged)</Text>
-          <View style={styles.imageBox}>
-            {photoUri ? (
-              <Image source={{ uri: photoUri }} style={styles.photo} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+            {photoUris.length === 0 ? (
+              <View style={styles.squarePlaceholder}>
+                <Text style={styles.imagePlaceholder}>No images captured</Text>
+              </View>
             ) : (
-              <Text style={styles.imagePlaceholder}>No photo</Text>
+              photoUris.map((uri, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.squareImageBox}
+                  onPress={() => {
+                    setSelectedImage(uri);
+                    setModalVisible(true);
+                  }}
+                >
+                  <Image source={{ uri }} style={styles.squareImage} />
+                </TouchableOpacity>
+              ))
             )}
-          </View>
+          </ScrollView>
+          <Modal
+            visible={modalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setModalVisible(false)}
+          >
+            <View style={styles.modalContainer}>
+              <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
+                <Ionicons name="close-circle" size={40} color="#fff" />
+              </TouchableOpacity>
+              {selectedImage && (
+                <Image source={{ uri: selectedImage }} style={styles.modalImage} resizeMode="contain" />
+              )}
+            </View>
+          </Modal>
+
           <TouchableOpacity style={styles.captureButton} onPress={pickPhoto}>
             <Text style={styles.captureButtonText}>Capture Image</Text>
           </TouchableOpacity>
@@ -371,4 +420,68 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   buttonText: { color: "#4CAF50", fontWeight: "600" },
+  dropdownContainer: {
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderRadius: 8,
+    marginTop: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+    backgroundColor: '#F8FFF8',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  picker: {
+    height: 54,
+    width: '100%',
+    color: '#222',
+    backgroundColor: 'transparent',
+  },
+  disabledField: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 6,
+  },
+  disabledText: {
+    color: '#666',
+    fontSize: 15,
+  },
+  squarePlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  squareImageBox: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginRight: 8,
+  },
+  squareImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalClose: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+  },
+  modalImage: {
+    width: '90%',
+    height: '70%',
+  },
 });

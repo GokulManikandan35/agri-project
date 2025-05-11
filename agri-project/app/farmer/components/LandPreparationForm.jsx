@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, Animated, ScrollView, Modal, Dimensions, Image } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import useAccordionAnimation from '../hooks/useAccordionAnimation';
+import { Picker } from '@react-native-picker/picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const fertilizerTypes = ['Urea', 'DAP', 'Potash', 'Compost', 'Vermicompost'];
+const seedVarieties = ['Variety 1', 'Variety 2', 'Variety 3'];
 
 export default function LandPreparationForm() {
   const [expanded, setExpanded] = useState(false);
@@ -13,19 +16,52 @@ export default function LandPreparationForm() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [fertilizer, setFertilizer] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [photoUri, setPhotoUri] = useState(null);
+  const [photoUris, setPhotoUris] = useState([]);
   const [isSaved, setIsSaved] = useState(false);
+  const [seedVariety, setSeedVariety] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   // Use the custom accordion animation hook
   const { rotateArrow, getBodyStyle } = useAccordionAnimation(expanded);
 
-  const handleSave = () => {
+  // Helper function to compare only date part (ignoring time)
+  function isSameDay(date1, date2) {
+    return (
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate()
+    );
+  }
+
+  useEffect(() => {
+    AsyncStorage.getItem('LandPreparationFormData')
+      .then(data => {
+        if (data) {
+          const saved = JSON.parse(data);
+          // assuming fields: selectedDate, fertilizer, quantity, photoUris, isSaved
+          setSelectedDate(new Date(saved.selectedDate));
+          setFertilizer(saved.fertilizer);
+          setQuantity(saved.quantity);
+          setPhotoUris(saved.photoUris || []);
+          setIsSaved(saved.isSaved);
+          console.log("Loaded LandPreparationFormData", saved);
+        }
+      })
+      .catch(err => console.log("Error loading LandPreparationFormData", err));
+  }, []);
+
+  const handleSave = async () => {
     try {
       if (!quantity || isNaN(parseFloat(quantity))) {
         throw new Error("Please enter a valid numeric quantity.");
       }
       setIsSaved(true);
-      Alert.alert("Success", "Data saved successfully!");
+      await AsyncStorage.setItem(
+        'LandPreparationFormData',
+        JSON.stringify({ selectedDate, fertilizer, quantity, photoUris, isSaved: true })
+      );
+      Alert.alert("Success", "Data saved successfully.");
       setExpanded(false);
     } catch (error) {
       Alert.alert("Save Error", error.message);
@@ -43,7 +79,7 @@ export default function LandPreparationForm() {
             setSelectedDate(new Date());
             setFertilizer('');
             setQuantity('');
-            setPhotoUri(null);
+            setPhotoUris([]);
             setIsSaved(false);
             setExpanded(false);
           }
@@ -64,16 +100,16 @@ export default function LandPreparationForm() {
         quality: 0.7,
       });
       if (!result.canceled) {
-        setPhotoUri(result.assets[0].uri);
-        Alert.alert("Image Captured", "Your photo has been captured successfully.");
+        setPhotoUris([...photoUris, result.assets[0].uri]);
+        Alert.alert("Success", "Image captured successfully!");
       }
     } catch (error) {
       Alert.alert("Capture Error", "Failed to capture image: " + error.message);
     }
   };
 
-  const today = new Date().toDateString();
-  const isCompleted = isSaved && selectedDate.toDateString() === today;
+  const today = new Date();
+  const isCompleted = isSaved && isSameDay(selectedDate, today);
 
   return (
     <View style={styles.card}>
@@ -112,18 +148,19 @@ export default function LandPreparationForm() {
           )}
 
           <Text style={styles.label}>Fertilizer Type</Text>
-          <View style={styles.tags}>
-            {fertilizerTypes.map((type) => (
-              <TouchableOpacity
-                key={type}
-                onPress={() => setFertilizer(type)}
-                style={[styles.tag, fertilizer === type && styles.selectedTag]}
-              >
-                <Text style={[styles.tagText, fertilizer === type && styles.selectedTagText]}>
-                  {type}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.dropdownContainer}>
+            <Picker
+              selectedValue={fertilizer}
+              onValueChange={(itemValue) => setFertilizer(itemValue)}
+              style={styles.picker}
+              dropdownIconColor="#4CAF50"
+              mode="dropdown"
+            >
+              <Picker.Item label="Select Fertilizer" value="" color="#888" />
+              {fertilizerTypes.map((type) => (
+                <Picker.Item key={type} label={type} value={type} color="#222" />
+              ))}
+            </Picker>
           </View>
 
           <Text style={styles.label}>Quantity (Kg)</Text>
@@ -136,13 +173,45 @@ export default function LandPreparationForm() {
           />
 
           <Text style={styles.label}>Photos (Geo-tagged)</Text>
-          <View style={styles.imageBox}>
-            {photoUri ? (
-              <Image source={{ uri: photoUri }} style={styles.photo} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+            {photoUris.length === 0 ? (
+              <View style={styles.squarePlaceholder}>
+                <Text style={styles.imagePlaceholder}>No images captured</Text>
+              </View>
             ) : (
-              <Text style={styles.imagePlaceholder}>Image Preview</Text>
+              photoUris.map((uri, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.squareImageBox}
+                  onPress={() => {
+                    setSelectedImage(uri);
+                    setModalVisible(true);
+                  }}
+                >
+                  <Image source={{ uri }} style={styles.squareImage} />
+                </TouchableOpacity>
+              ))
             )}
-          </View>
+          </ScrollView>
+          <Modal
+            visible={modalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setModalVisible(false)}
+          >
+            <View style={styles.modalContainer}>
+              <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
+                <Ionicons name="close-circle" size={40} color="#fff" />
+              </TouchableOpacity>
+              {selectedImage && (
+                <Image
+                  source={{ uri: selectedImage }}
+                  style={styles.modalImage}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+          </Modal>
 
           <TouchableOpacity style={styles.captureButton} onPress={handleCaptureImage}>
             <Text style={styles.captureButtonText}>Capture Image</Text>
@@ -168,6 +237,8 @@ export default function LandPreparationForm() {
     </View>
   );
 }
+
+const screenWidth = Dimensions.get('window').width;
 
 const styles = StyleSheet.create({
   card: {
@@ -235,28 +306,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#2E7D32',
   },
-  tags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  dropdownContainer: {
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderRadius: 8,
     marginTop: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+    backgroundColor: '#F8FFF8',
+    minHeight: 44,
+    justifyContent: 'center',
   },
-  tag: {
-    backgroundColor: '#EEE',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    margin: 4,
-  },
-  selectedTag: {
-    backgroundColor: '#A5D6A7',
-  },
-  tagText: {
-    color: '#555',
-  },
-  selectedTagText: {
-    color: 'white',
-    fontWeight: '600',
+  picker: {
+    height: 54,
+    width: '100%',
+    color: '#222',
+    backgroundColor: 'transparent',
   },
   input: {
     borderWidth: 1,
@@ -265,23 +330,50 @@ const styles = StyleSheet.create({
     padding: 10,
     marginTop: 6,
   },
-  imageBox: {
+  squareImageBox: {
+    width: 100,
     height: 100,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#CCC',
-    borderRadius: 8,
-    marginTop: 6,
+    backgroundColor: '#F5F5F5',
+    marginRight: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
+    overflow: 'hidden',
   },
-  photo: {
-    width: '100%',
-    height: '100%',
+  squareImage: {
+    width: 100,
+    height: 100,
     borderRadius: 8,
   },
-  imagePlaceholder: {
-    color: '#AAA',
+  squarePlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CCC',
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalImage: {
+    width: screenWidth * 0.9,
+    height: screenWidth * 0.9,
+    borderRadius: 12,
+  },
+  modalClose: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 2,
   },
   captureButton: {
     marginTop: 10,
@@ -290,6 +382,7 @@ const styles = StyleSheet.create({
     borderColor: '#4CAF50',
     borderRadius: 8,
     alignItems: 'center',
+    marginBottom: 16,
   },
   captureButtonText: {
     color: '#4CAF50',

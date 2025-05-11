@@ -1,32 +1,70 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated, ScrollView, Modal, Dimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import useAccordionAnimation from '../hooks/useAccordionAnimation';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Added seed varieties constant
-const VARIETIES = ["K1", "K2"];
+const seedVarieties = ["K1", "K2"];
 
-export default function PackingForm() {
+export default function PackingForm({ seedVariety }) {
   const [expanded, setExpanded] = useState(false);
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [quantity, setQuantity] = useState('');
-  const [selectedVariety, setSelectedVariety] = useState(''); // Added state for seed variety
-  const [photoUri, setPhotoUri] = useState(null);
+  const [photoUris, setPhotoUris] = useState([]);
   const [isSaved, setIsSaved] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
   
-  // Use the custom accordion animation hook
   const { rotateArrow, getBodyStyle } = useAccordionAnimation(expanded);
 
-  const handleSave = () => {
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const data = await AsyncStorage.getItem('PackingFormData');
+        if (data) {
+          const saved = JSON.parse(data);
+          console.log("Loaded PackingFormData", saved);
+          // Ensure saved.date is a valid date string
+          if (saved.date) {
+            setDate(new Date(saved.date));
+          } else {
+            setDate(new Date());
+          }
+          setQuantity(saved.quantity);
+          setPhotoUris(saved.photoUris || []);
+          setIsSaved(saved.isSaved);
+        } else {
+          console.log("No PackingFormData found.");
+        }
+      } catch (err) {
+        console.log("Error loading PackingFormData", err);
+      }
+    }
+    loadData();
+  }, []);
+
+  function isSameDay(date1, date2) {
+    return (
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate()
+    );
+  }
+
+  const handleSave = async () => {
     try {
-      if (!selectedVariety) throw new Error("Please select a seed variety."); // Added validation
+      if (!seedVariety) throw new Error("Please select a seed variety.");
       if (!quantity || isNaN(parseFloat(quantity))) throw new Error("Please enter a valid quantity.");
-      if (!photoUri) throw new Error("Please capture a photo of the packed product.");
+      if (photoUris.length === 0) throw new Error("Please capture at least one photo of the packed product.");
 
       setIsSaved(true);
+      await AsyncStorage.setItem(
+        'PackingFormData',
+        JSON.stringify({ seedVariety, date, quantity, photoUris, isSaved: true })
+      );
       Alert.alert("Success", "Packing event recorded successfully.");
       setExpanded(false);
     } catch (error) {
@@ -42,8 +80,7 @@ export default function PackingForm() {
         { text: "No", style: "cancel" },
         { text: "Yes", onPress: () => {
             setQuantity('');
-            setSelectedVariety(''); // Reset variety
-            setPhotoUri(null);
+            setPhotoUris([]);
             setIsSaved(false);
             setExpanded(false);
           }
@@ -64,16 +101,16 @@ export default function PackingForm() {
         quality: 0.7,
       });
       if (!result.canceled) {
-        setPhotoUri(result.assets[0].uri);
-        Alert.alert("Image Captured", "Your photo has been captured successfully.");
+        setPhotoUris([...photoUris, result.assets[0].uri]);
+        Alert.alert("Success", "Image captured successfully!");
       }
     } catch (error) {
       Alert.alert("Capture Error", "Failed to capture image: " + error.message);
     }
   };
 
-  const today = new Date().toDateString();
-  const isCompleted = isSaved && date.toDateString() === today;
+  const today = new Date();
+  const isCompleted = isSaved && isSameDay(date, today);
 
   return (
     <View style={styles.card}>
@@ -94,20 +131,11 @@ export default function PackingForm() {
 
       {expanded && (
         <Animated.View style={[styles.body, getBodyStyle()]}>
-          {/* Add Seed Variety Selection */}
           <Text style={styles.label}>Seed Variety</Text>
-          <View style={styles.tags}>
-            {VARIETIES.map((variety) => (
-              <TouchableOpacity
-                key={variety}
-                onPress={() => setSelectedVariety(variety)}
-                style={[styles.tag, selectedVariety === variety && styles.selectedTag]}
-              >
-                <Text style={[styles.tagText, selectedVariety === variety && styles.selectedTagText]}>
-                  {variety}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.disabledField}>
+            <Text style={styles.disabledText}>
+              {seedVariety ? seedVariety : "Not selected"}
+            </Text>
           </View>
 
           <Text style={styles.label}>Date of Packing</Text>
@@ -137,13 +165,45 @@ export default function PackingForm() {
           />
 
           <Text style={styles.label}>Photos (Geo-tagged)</Text>
-          <View style={styles.imageBox}>
-            {photoUri ? (
-              <Image source={{ uri: photoUri }} style={styles.photo} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+            {photoUris.length === 0 ? (
+              <View style={styles.squarePlaceholder}>
+                <Text style={styles.imagePlaceholder}>No images captured</Text>
+              </View>
             ) : (
-              <Text style={styles.imagePlaceholder}>Image Preview</Text>
+              photoUris.map((uri, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.squareImageBox}
+                  onPress={() => {
+                    setSelectedImage(uri);
+                    setModalVisible(true);
+                  }}
+                >
+                  <Image source={{ uri }} style={styles.squareImage} />
+                </TouchableOpacity>
+              ))
             )}
-          </View>
+          </ScrollView>
+          <Modal
+            visible={modalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setModalVisible(false)}
+          >
+            <View style={styles.modalContainer}>
+              <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
+                <Ionicons name="close-circle" size={40} color="#fff" />
+              </TouchableOpacity>
+              {selectedImage && (
+                <Image
+                  source={{ uri: selectedImage }}
+                  style={styles.modalImage}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+          </Modal>
 
           <TouchableOpacity style={styles.captureButton} onPress={handleCaptureImage}>
             <Text style={styles.captureButtonText}>Capture Image</Text>
@@ -153,7 +213,6 @@ export default function PackingForm() {
             <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancel}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
-            
             <TouchableOpacity style={[styles.button, styles.saveButton]} onPress={handleSave}>
               <Text style={styles.saveButtonText}>Save</Text>
             </TouchableOpacity>
@@ -163,6 +222,8 @@ export default function PackingForm() {
     </View>
   );
 }
+
+const screenWidth = Dimensions.get('window').width;
 
 const styles = StyleSheet.create({
   card: {
@@ -239,23 +300,53 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 12,
   },
-  imageBox: {
+  squareImageBox: {
+    width: 100,
     height: 100,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#CCC',
-    borderRadius: 8,
-    marginTop: 6,
+    backgroundColor: '#F5F5F5',
+    marginRight: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
+    overflow: 'hidden',
   },
-  photo: {
-    width: '100%',
-    height: '100%',
+  squareImage: {
+    width: 100,
+    height: 100,
     borderRadius: 8,
+  },
+  squarePlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CCC',
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
   },
   imagePlaceholder: {
     color: '#AAA',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalImage: {
+    width: screenWidth * 0.9,
+    height: screenWidth * 0.9,
+    borderRadius: 12,
+  },
+  modalClose: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 2,
   },
   captureButton: {
     marginTop: 10,
@@ -299,31 +390,33 @@ const styles = StyleSheet.create({
     color: '#555',
     fontWeight: '500',
   },
-  // Add styles for tags
-  tags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  dropdownContainer: {
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderRadius: 8,
     marginTop: 6,
-    marginBottom: 12,
+    marginBottom: 6,
+    overflow: 'hidden',
+    backgroundColor: '#F8FFF8',
+    minHeight: 50,
+    justifyContent: 'center',
   },
-  tag: {
-    backgroundColor: '#EEE',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    margin: 4,
+  disabledField: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 6,
   },
-  selectedTag: {
-    backgroundColor: '#4CAF50',
-    borderLeftWidth: 3,
-    borderLeftColor: '#A5D6A7',
+  disabledText: {
+    color: '#666',
+    fontSize: 15,
   },
-  tagText: {
-    color: '#555',
-  },
-  selectedTagText: {
-    color: 'white',
-    fontWeight: '600',
+  picker: {
+    height: 54,
+    width: '100%',
+    color: '#222',
+    backgroundColor: 'transparent',
   },
 });
