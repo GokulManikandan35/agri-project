@@ -17,6 +17,8 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import useAccordionAnimation from '../../farmer/hooks/useAccordionAnimation';
+import { StatusBar } from 'expo-status-bar';
+import QRCodeDisplay from '../components/QRCodeDisplay'; // <-- Add this import
 
 export default function FarmerDetailsPage() {
   const [procurementData, setProcurementData] = useState(null);
@@ -40,14 +42,101 @@ export default function FarmerDetailsPage() {
   const procurementAnimation = useAccordionAnimation(expandedProcurement);
   const packingAnimation = useAccordionAnimation(expandedPacking);
 
+  const headerStyles = StyleSheet.create({
+    headerContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingTop: 20,
+      paddingBottom: 16,
+      backgroundColor: '#fff',
+      borderBottomWidth: 1,
+      borderBottomColor: '#eee',
+    },
+    profileContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    profileImage: {
+      width: 50,
+      height: 50,
+      borderRadius: 25,
+      marginRight: 12,
+    },
+    welcomeText: {
+      fontSize: 14,
+      color: '#666',
+    },
+    farmerText: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: '#333',
+    },
+    fpoIdText: {
+      fontSize: 13,
+      color: '#4A8D3D',
+      fontWeight: '600',
+      marginTop: 2,
+    },
+    dateChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#f0f0f0',
+      borderRadius: 16,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    dateText: {
+      fontSize: 12,
+      color: 'gray',
+      marginLeft: 6,
+    },
+    divider: {
+      height: 1,
+      backgroundColor: '#eee',
+      marginHorizontal: 16,
+    },
+  });
+
+  const getCurrentDate = () => {
+    const date = new Date();
+    return date.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+    });
+  };
+
   useEffect(() => {
     async function loadData() {
       try {
         const procurement = await AsyncStorage.getItem('ProcurementFormData');
         const packing = await AsyncStorage.getItem('drychilliesevent');
         
-        const parsedProcurement = procurement ? JSON.parse(procurement) : {};
-        const parsedPacking = packing ? JSON.parse(packing) : {};
+        // Provide sensible defaults if no data exists
+        const parsedProcurement = procurement
+          ? JSON.parse(procurement)
+          : {
+              farmerName: 'Munusamy',
+              seedVariety: '',
+              date: new Date().toISOString(),
+              quantity: '',
+              pricePerKg: '',
+              photoUris: [],
+              farmerQuantity: '',
+              isSaved: false,
+            };
+        const parsedPacking = packing
+          ? JSON.parse(packing)
+          : {
+              lotId: 'LOT84729',
+              date: new Date().toISOString(),
+              quantity: '',
+              avgPricePerKg: '',
+              photoUris: [],
+              isSaved: false,
+            };
         
         const combinedData = {
           procurement: parsedProcurement,
@@ -55,23 +144,21 @@ export default function FarmerDetailsPage() {
         };
         
         console.log('Loaded procurement data:', combinedData.procurement);
+        console.log('Loaded packing (dry chillies) data:', combinedData.packing); // <-- Add this line
         
         setProcurementData(combinedData);
-        if (Object.keys(combinedData.procurement).length > 0) {
-          const proc = combinedData.procurement;
-          setProcurementDate(proc.date ? new Date(proc.date) : new Date());
-          setProcurementPrice(proc.pricePerKg || '');
-          setProcurementQuantity(proc.quantity || '');
-          setFarmerQuantity(proc.farmerQuantity || proc.quantity || '');
-          setProcurementPhotoUris(proc.photoUris || []);
-        }
-        if (combinedData.packing) {
-          if (combinedData.packing.avgPricePerKg)
-            setPackingAvgPrice(combinedData.packing.avgPricePerKg);
-          setPackingDate(combinedData.packing.date ? new Date(combinedData.packing.date) : new Date());
-          setPackingQuantity('');
-          setPackingPhotoUris(combinedData.packing.photoUris || []);
-        }
+        // Always set form fields, even if empty
+        const proc = combinedData.procurement;
+        setProcurementDate(proc.date ? new Date(proc.date) : new Date());
+        setProcurementPrice(proc.pricePerKg || '');
+        setProcurementQuantity(proc.quantity || '');
+        setFarmerQuantity(proc.farmerQuantity || proc.quantity || '');
+        setProcurementPhotoUris(proc.photoUris || []);
+        const pack = combinedData.packing;
+        setPackingAvgPrice(pack.avgPricePerKg || '');
+        setPackingDate(pack.date ? new Date(pack.date) : new Date());
+        setPackingQuantity(pack.quantity || '');
+        setPackingPhotoUris(pack.photoUris || []);
       } catch (error) {
         console.error("Error loading data", error);
       } finally {
@@ -158,6 +245,7 @@ export default function FarmerDetailsPage() {
   const savePacking = async () => {
     try {
       const newPacking = {
+        lotId: procurementData?.packing?.lotId || 'LOT84729',
         date: packingDate.toISOString(),
         quantity: packingQuantity,
         avgPricePerKg: packingAvgPrice,
@@ -165,6 +253,11 @@ export default function FarmerDetailsPage() {
         isSaved: true,
       };
       await AsyncStorage.setItem('drychilliesevent', JSON.stringify(newPacking));
+      // Update local state so UI reflects new packing data immediately
+      setProcurementData(prev => ({
+        ...prev,
+        packing: newPacking
+      }));
       alert("Packing data saved successfully");
     } catch (error) {
       alert("Error saving packing data: " + error.message);
@@ -205,7 +298,7 @@ export default function FarmerDetailsPage() {
           </Text>
         </View>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Farmer Quantity:</Text>
+          <Text style={styles.detailLabel}>Quantity (kg):</Text>
           <Text style={styles.detailValue}>
             {farmerQuantity || procurementData?.procurement?.quantity || procurementData?.packing?.quantity || ''}
           </Text>
@@ -240,7 +333,7 @@ export default function FarmerDetailsPage() {
           />
         </View>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Price Per kg:</Text>
+          <Text style={styles.detailLabel}>Avg Price /kg:</Text>
           <TextInput
             style={[styles.detailValue, styles.inputField]}
             value={procurementPrice}
@@ -281,7 +374,7 @@ export default function FarmerDetailsPage() {
     return (
       <View style={styles.detailsContainer}>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Lot id:</Text>
+          <Text style={styles.detailLabel}>Lot Id:</Text>
           <Text style={styles.detailValue}>{procurementData?.packing?.lotId || 'LOT84729'}</Text>
         </View>
         <View style={styles.detailRow}>
@@ -304,7 +397,7 @@ export default function FarmerDetailsPage() {
           />
         )}
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Quantity:</Text>
+          <Text style={styles.detailLabel}>Quantity (kg):</Text>
           <TextInput
             style={[styles.detailValue, styles.inputField]}
             value={packingQuantity}
@@ -314,7 +407,7 @@ export default function FarmerDetailsPage() {
           />
         </View>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Average price in kg:</Text>
+          <Text style={styles.detailLabel}>Avg Sale price /kg:</Text>
           <TextInput
             style={[styles.detailValue, styles.inputField]}
             value={packingAvgPrice}
@@ -351,9 +444,33 @@ export default function FarmerDetailsPage() {
     );
   };
 
+  // Generate a unique QR value, e.g., using procurementData or a static string for now
+  const qrValue = procurementData?.procurement?.farmerName
+    ? `https://yourapp.com/farmer-details?id=${encodeURIComponent(procurementData.procurement.farmerName)}`
+    : 'https://yourapp.com/farmer-details';
+
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.pageTitle}>Farmer Details</Text>
+      <StatusBar style="dark" />
+      {/* Header */}
+      <View style={headerStyles.headerContainer}>
+        <View style={headerStyles.profileContainer}>
+          <Image
+            style={headerStyles.profileImage}
+            source={require('../../../assets/images/farmer1.jpg')}
+          />
+          <View>
+            <Text style={headerStyles.welcomeText}>Welcome back,</Text>
+            <Text style={headerStyles.farmerText}>Thomos</Text>
+            <Text style={headerStyles.fpoIdText}>FPO8743</Text>
+          </View>
+        </View>
+        <View style={headerStyles.dateChip}>
+          <Ionicons name="calendar-outline" size={16} color="gray" />
+          <Text style={headerStyles.dateText}>{getCurrentDate()}</Text>
+        </View>
+      </View>
+      <View style={headerStyles.divider} />
       
       <View style={styles.card}>
         <TouchableOpacity 
@@ -463,6 +580,9 @@ export default function FarmerDetailsPage() {
           )}
         </View>
       </Modal>
+
+      {/* Use only the QRCodeDisplay component, pass procurementData if needed */}
+      <QRCodeDisplay procurementData={procurementData} />
     </ScrollView>
   );
 }
@@ -479,12 +599,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  pageTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    color: '#4A8D3D',
   },
   card: {
     marginBottom: 16,
@@ -673,5 +787,23 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: '#555',
     fontWeight: '500',
+  },
+  qrButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4CAF50',
+    paddingVertical: 14,
+    borderRadius: 8,
+    marginTop: 24,
+    marginBottom: 32,
+    marginHorizontal: 16,
+    elevation: 2,
+  },
+  qrButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
   },
 });

@@ -136,7 +136,8 @@ const FPOHomeScreen = () => {
           />
           <View>
             <Text style={styles.welcomeText}>Welcome back,</Text>
-            <Text style={styles.farmerText}>Munusamy</Text>
+            <Text style={styles.farmerText}>Thomos</Text>
+            <Text style={styles.fpoIdText}>FPO8743</Text>
           </View>
         </View>
         <View style={styles.dateChip}>
@@ -167,7 +168,6 @@ const FPOHomeScreen = () => {
       <View style={styles.filterContainer}>
         <Text style={styles.filterLabel}>Search by:</Text>
         <View style={styles.filterButtons}>
-          {renderFilterButton('All', 'all')}
           {renderFilterButton('Name', 'name')}
           {renderFilterButton('ID', 'id')}
         </View>
@@ -228,6 +228,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
+  },
+  fpoIdText: {
+    fontSize: 13,
+    color: '#4A8D3D',
+    fontWeight: '600',
+    marginTop: 2,
   },
   dateChip: {
     flexDirection: 'row',
