@@ -16,9 +16,11 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import useAccordionAnimation from '../../farmer/hooks/useAccordionAnimation';
 import { StatusBar } from 'expo-status-bar';
-import QRCodeDisplay from '../components/QRCodeDisplay'; // <-- Add this import
+import QRCodeDisplay from '../components/QRCodeDisplay';
+import axios from 'axios';
 
 export default function FarmerDetailsPage() {
   const [procurementData, setProcurementData] = useState(null);
@@ -112,9 +114,8 @@ export default function FarmerDetailsPage() {
     async function loadData() {
       try {
         const procurement = await AsyncStorage.getItem('ProcurementFormData');
-        const packing = await AsyncStorage.getItem('drychilliesevent');
+        const packing = await AsyncStorage.getItem('PackingFormData');
         
-        // Provide sensible defaults if no data exists
         const parsedProcurement = procurement
           ? JSON.parse(procurement)
           : {
@@ -144,15 +145,14 @@ export default function FarmerDetailsPage() {
         };
         
         console.log('Loaded procurement data:', combinedData.procurement);
-        console.log('Loaded packing (dry chillies) data:', combinedData.packing); // <-- Add this line
+        console.log('Loaded packing (dry chillies) data:', combinedData.packing);
         
         setProcurementData(combinedData);
-        // Always set form fields, even if empty
         const proc = combinedData.procurement;
         setProcurementDate(proc.date ? new Date(proc.date) : new Date());
         setProcurementPrice(proc.pricePerKg || '');
         setProcurementQuantity(proc.quantity || '');
-        setFarmerQuantity(proc.farmerQuantity || proc.quantity || '');
+        setFarmerQuantity( proc.Quantity || '');
         setProcurementPhotoUris(proc.photoUris || []);
         const pack = combinedData.packing;
         setPackingAvgPrice(pack.avgPricePerKg || '');
@@ -208,71 +208,176 @@ export default function FarmerDetailsPage() {
     }
   };
 
-  const saveProcurement = async () => {
+  // Helper to convert image URIs to base64
+  const getBase64FromUris = async (uris) => {
+    const base64Array = [];
+    for (const uri of uris) {
+      try {
+        const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        base64Array.push(base64);
+      } catch (e) {
+        console.log("Error converting image to base64:", uri, e);
+      }
+    }
+    return base64Array;
+  };
+
+  // Backend data sending method for Procurement
+  const sendProcurementToBackend = async (data) => {
+    console.log("Sending procurement data to backend:", data);
     try {
-      const newProcurement = {
-        farmerName: procurementData?.procurement?.farmerName || '',
-        seedVariety: procurementData?.procurement?.seedVariety || '',
-        date: procurementDate,
-        quantity: procurementQuantity || farmerQuantity,
-        pricePerKg: procurementPrice,
-        photoUris: procurementPhotoUris,
-        farmerQuantity: farmerQuantity,
-        isSaved: true,
-      };
-      await AsyncStorage.setItem('ProcurementFormData', JSON.stringify(newProcurement));
-      setProcurementData(prev => ({ ...prev, procurement: newProcurement }));
+      const response = await axios.post(
+        'http://4.247.169.244:8080/generate-qr/',
+        data,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+      console.log("Procurement backend response:", response);
+      await AsyncStorage.setItem('ProcurementFormData', JSON.stringify(data));
       alert("Procurement data saved successfully");
     } catch (error) {
-      alert("Error saving procurement data: " + error.message);
+      let errorMessage = "Error saving procurement data.";
+      if (error.response) {
+        errorMessage = error.response.data?.error || `Server responded with status ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = "No response received from server. Check network connection and server status.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      alert(errorMessage);
     }
   };
 
-  const cancelProcurement = () => {
-    if (procurementData && procurementData.procurement) {
-      setProcurementQuantity('');
-      setProcurementPrice('');
-      setProcurementPhotoUris(procurementData.procurement.photoUris || []);
-      setFarmerQuantity(procurementData.procurement.farmerQuantity || procurementData.procurement.quantity || '');
-    } else {
+  // Backend data sending method for Packing of Dry Chillies
+  const sendPackingToBackend = async (data) => {
+    console.log("Sending packing data to backend:", data);
+    try {
+      const response = await axios.post(
+        'http://4.247.169.244:8080/generate-qr/',
+        data,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+      console.log("Packing backend response:", response);
+      await AsyncStorage.setItem('PackingFormData', JSON.stringify(data));
+      alert("Packing data saved successfully");
+    } catch (error) {
+      let errorMessage = "Error saving packing data.";
+      if (error.response) {
+        errorMessage = error.response.data?.error || `Server responded with status ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = "No response received from server. Check network connection and server status.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      alert(errorMessage);
+    }
+  };
+
+  const saveProcurement = async () => {
+    // Convert images to base64 before sending
+    const photoBase64s = await getBase64FromUris(procurementPhotoUris);
+    const newProcurement = {
+      farmerName: procurementData?.procurement?.farmerName || '',
+      seedVariety: procurementData?.procurement?.seedVariety || '',
+      date: procurementDate,
+      quantity: procurementQuantity || farmerQuantity,
+      pricePerKg: procurementPrice,
+      photoBase64s, // send as base64 array
+      farmerQuantity: farmerQuantity,
+      isSaved: true,
+    };
+    await sendProcurementToBackend(newProcurement);
+    setProcurementData(prev => ({ ...prev, procurement: newProcurement }));
+  };
+
+  const cancelProcurement = async () => {
+    try {
+      await AsyncStorage.removeItem('ProcurementFormData');
       setProcurementQuantity('');
       setProcurementPrice('');
       setProcurementPhotoUris([]);
       setFarmerQuantity('');
+      setProcurementData(prev => ({
+        ...prev,
+        procurement: {
+          farmerName: 'Munusamy',
+          seedVariety: '',
+          date: new Date().toISOString(),
+          quantity: '',
+          pricePerKg: '',
+          photoUris: [],
+          farmerQuantity: '',
+          isSaved: false,
+        }
+      }));
+      alert("Procurement data removed.");
+    } catch (error) {
+      alert("Error removing procurement data: " + error.message);
     }
   };
 
   const savePacking = async () => {
+    // Convert images to base64 before sending
+    const photoBase64s = await getBase64FromUris(packingPhotoUris);
+    const newPacking = {
+      lotId: procurementData?.packing?.lotId || 'LOT84729',
+      date: packingDate instanceof Date && !isNaN(packingDate) ? packingDate.toISOString() : new Date().toISOString(),
+      quantity: packingQuantity,
+      avgPricePerKg: packingAvgPrice,
+      photoBase64s, // send as base64 array
+      isSaved: true,
+    };
+    await sendPackingToBackend(newPacking);
+    setProcurementData(prev => ({
+      ...prev,
+      packing: newPacking
+    }));
+  };
+
+  const cancelPacking = async () => {
     try {
-      const newPacking = {
-        lotId: procurementData?.packing?.lotId || 'LOT84729',
-        date: packingDate.toISOString(),
-        quantity: packingQuantity,
-        avgPricePerKg: packingAvgPrice,
-        photoUris: packingPhotoUris,
-        isSaved: true,
-      };
-      await AsyncStorage.setItem('drychilliesevent', JSON.stringify(newPacking));
-      // Update local state so UI reflects new packing data immediately
+      await AsyncStorage.removeItem('PackingFormData');
+      setPackingAvgPrice('');
+      setPackingDate(new Date());
+      setPackingQuantity('');
+      setPackingPhotoUris([]);
       setProcurementData(prev => ({
         ...prev,
-        packing: newPacking
+        packing: {
+          lotId: 'LOT84729',
+          date: new Date().toISOString(),
+          quantity: '',
+          avgPricePerKg: '',
+          photoUris: [],
+          isSaved: false,
+        }
       }));
-      alert("Packing data saved successfully");
+      alert("Packing data removed.");
     } catch (error) {
-      alert("Error saving packing data: " + error.message);
+      alert("Error removing packing data: " + error.message);
     }
   };
 
-  const cancelPacking = () => {
-    if (procurementData && procurementData.packing) {
-      setPackingAvgPrice(procurementData.packing.avgPricePerKg || '');
-      setPackingDate(procurementData.packing.date || '');
-      setPackingQuantity('');
-    } else {
-      setPackingAvgPrice('');
-      setPackingDate('');
-      setPackingQuantity('');
+  const saveLandPreparation = async (payload) => {
+    console.log("Sending land preparation data to backend:", payload);
+    try {
+      const response = await axios.post(
+        'http://4.247.169.244:8080/generate-qr/',
+        payload,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+      console.log("Land Preparation backend response:", response);
+      await AsyncStorage.setItem('LandPreparationFormData', JSON.stringify(payload));
+      alert("Land Preparation data saved successfully");
+    } catch (error) {
+      let errorMessage = "Error saving land preparation data.";
+      if (error.response) {
+        errorMessage = error.response.data?.error || `Server responded with status ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = "No response received from server. Check network connection and server status.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      alert(errorMessage);
     }
   };
 
@@ -285,24 +390,34 @@ export default function FarmerDetailsPage() {
   }
 
   const renderProcurementDetails = () => {
+    // Defensive fallback for procurementData
+    const procurement = procurementData?.procurement || {};
+    // Try to get farmerQuantity from procurement, or from packing if not present
+    const farmerQty =
+      procurement.farmerQuantity && String(procurement.farmerQuantity).trim() !== ''
+        ? procurement.farmerQuantity
+        : (procurementData?.packing?.farmerQuantity && String(procurementData.packing.farmerQuantity).trim() !== ''
+            ? procurementData.packing.farmerQuantity
+            : '');
+
     return (
       <View style={styles.detailsContainer}>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Farmer Name:</Text>
-          <Text style={styles.detailValue}>{procurementData?.procurement?.farmerName || 'Munusamy'}</Text>
+          <Text style={styles.detailValue}>{procurement.farmerName || 'Munusamy'}</Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Seed Variety:</Text>
           <Text style={styles.detailValue}>
-            {procurementData?.procurement?.seedVariety || procurementData?.packing?.seedVariety || ''}
+            {procurement.seedVariety || procurementData?.packing?.seedVariety || ''}
           </Text>
         </View>
-        <View style={styles.detailRow}>
+        {/* <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Quantity (kg):</Text>
           <Text style={styles.detailValue}>
-            {farmerQuantity || procurementData?.procurement?.quantity || procurementData?.packing?.quantity || ''}
+            {procurementQuantity || procurement.Quantity || ''}
           </Text>
-        </View>
+        </View> */}
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Date of Procurement:</Text>
           <TouchableOpacity onPress={() => setShowProcDatePicker(true)} style={{width: '60%'}}>
@@ -371,23 +486,35 @@ export default function FarmerDetailsPage() {
   };
 
   const renderPackingDetails = () => {
+    const packing = procurementData?.packing || {};
+    const displayPackingDate = packingDate instanceof Date && !isNaN(packingDate)
+      ? packingDate
+      : new Date();
+
+    // Prefer local state, then packing.quantity, then fallback to empty string
+    const displayQuantity =
+      packingQuantity !== '' ? packingQuantity
+      : (typeof packing.quantity === 'string' || typeof packing.quantity === 'number')
+        ? packing.quantity
+        : '';
+
     return (
       <View style={styles.detailsContainer}>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Lot Id:</Text>
-          <Text style={styles.detailValue}>{procurementData?.packing?.lotId || 'LOT84729'}</Text>
+          <Text style={styles.detailValue}>{packing.lotId || 'LOT84729'}</Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Packing Date:</Text>
           <TouchableOpacity onPress={() => setShowPackingDatePicker(true)} style={{width: '60%'}}>
             <Text style={[styles.detailValue, {borderWidth:1, borderColor:'#CCC', padding:4, borderRadius:4}]}>
-              {packingDate ? packingDate.toDateString() : 'Select Date'}
+              {displayPackingDate ? displayPackingDate.toDateString() : 'Select Date'}
             </Text>
           </TouchableOpacity>
         </View>
         {showPackingDatePicker && (
           <DateTimePicker
-            value={packingDate || new Date()}
+            value={displayPackingDate}
             mode="date"
             display="default"
             onChange={(event, selectedDate) => {
@@ -400,7 +527,7 @@ export default function FarmerDetailsPage() {
           <Text style={styles.detailLabel}>Quantity (kg):</Text>
           <TextInput
             style={[styles.detailValue, styles.inputField]}
-            value={packingQuantity}
+            value={String(displayQuantity)}
             placeholder="Enter quantity"
             onChangeText={setPackingQuantity}
             keyboardType="numeric"
@@ -444,7 +571,6 @@ export default function FarmerDetailsPage() {
     );
   };
 
-  // Generate a unique QR value, e.g., using procurementData or a static string for now
   const qrValue = procurementData?.procurement?.farmerName
     ? `https://yourapp.com/farmer-details?id=${encodeURIComponent(procurementData.procurement.farmerName)}`
     : 'https://yourapp.com/farmer-details';
@@ -452,7 +578,6 @@ export default function FarmerDetailsPage() {
   return (
     <ScrollView style={styles.container}>
       <StatusBar style="dark" />
-      {/* Header */}
       <View style={headerStyles.headerContainer}>
         <View style={headerStyles.profileContainer}>
           <Image
@@ -581,7 +706,6 @@ export default function FarmerDetailsPage() {
         </View>
       </Modal>
 
-      {/* Use only the QRCodeDisplay component, pass procurementData if needed */}
       <QRCodeDisplay procurementData={procurementData} />
     </ScrollView>
   );

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated, ScrollView, Modal, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated, ScrollView, Modal, Dimensions, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import useAccordionAnimation from '../hooks/useAccordionAnimation';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 const seedVarieties = ["K1", "K2"];
 
@@ -12,38 +14,41 @@ export default function PackingForm({ seedVariety }) {
   const [expanded, setExpanded] = useState(false);
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [quantity, setQuantity] = useState('');
-  const [photoUris, setPhotoUris] = useState([]);
+  const [Quantity, setQuantity] = useState('');
+  const [photoBase64s, setPhotoBase64s] = useState([]);
   const [isSaved, setIsSaved] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
-  
+  const [isLoading, setIsLoading] = useState(true);
+
   const { rotateArrow, getBodyStyle } = useAccordionAnimation(expanded);
 
   useEffect(() => {
-    async function loadData() {
+    const loadFormData = async () => {
       try {
         const data = await AsyncStorage.getItem('PackingFormData');
         if (data) {
           const saved = JSON.parse(data);
           console.log("Loaded PackingFormData", saved);
-          // Ensure saved.date is a valid date string
           if (saved.date) {
             setDate(new Date(saved.date));
           } else {
             setDate(new Date());
           }
-          setQuantity(saved.quantity);
-          setPhotoUris(saved.photoUris || []);
+          setQuantity(saved.Quantity);
+          setPhotoBase64s(saved.photoBase64s || []);
           setIsSaved(saved.isSaved);
         } else {
           console.log("No PackingFormData found.");
         }
       } catch (err) {
         console.log("Error loading PackingFormData", err);
+      } finally {
+        setIsLoading(false);
       }
-    }
-    loadData();
+    };
+
+    loadFormData();
   }, []);
 
   function isSameDay(date1, date2) {
@@ -54,21 +59,93 @@ export default function PackingForm({ seedVariety }) {
     );
   }
 
+  function isSameOrBefore(date1, date2) {
+    // Returns true if date1 <= date2 (ignoring time)
+    return (
+      date1.getFullYear() < date2.getFullYear() ||
+      (date1.getFullYear() === date2.getFullYear() && date1.getMonth() < date2.getMonth()) ||
+      (date1.getFullYear() === date2.getFullYear() && date1.getMonth() === date2.getMonth() && date1.getDate() <= date2.getDate())
+    );
+  }
+
+  const formatBase64ForImage = (base64) => {
+    return `data:image/jpeg;base64,${base64}`;
+  };
+
   const handleSave = async () => {
+    const today = new Date();
+
+    if (isLoading || (isSaved && isSameOrBefore(date, today))) {
+      if (isLoading) {
+        Alert.alert("Info", "Form is currently loading. Please wait.");
+      } else if (isSaved && isSameOrBefore(date, today)) {
+        Alert.alert("Info", "Packing form is already marked as completed for today.");
+      }
+      return;
+    }
+
     try {
-      if (!seedVariety) throw new Error("Please select a seed variety.");
-      if (!quantity || isNaN(parseFloat(quantity))) throw new Error("Please enter a valid quantity.");
-      if (photoUris.length === 0) throw new Error("Please capture at least one photo of the packed product.");
+      if (!seedVariety) {
+        Alert.alert("Validation Error", "Please select a seed variety.");
+        return;
+      }
+      if (!Quantity || isNaN(parseFloat(Quantity))) {
+        Alert.alert("Validation Error", "Please enter a valid Quantity.");
+        return;
+      }
+      if (photoBase64s.length === 0) {
+        Alert.alert("Validation Error", "Please capture at least one photo of the packed product.");
+        return;
+      }
+
+      setIsLoading(true);
+
+      const payload = {
+        date: date.toISOString(),
+        seedVariety,
+        Quantity,
+        photoBase64s,
+        isSaved: true,
+        formType: 'packing'
+      };
+
+      console.log("Preparing to send data to backend...");
+
+      const response = await axios.post(
+        'http://4.247.169.244:8080/generate-qr/',
+        payload,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+
+      console.log("Backend response status:", response.status);
+      console.log("Backend response data:", response.data);
+
+      await AsyncStorage.setItem('PackingFormData', JSON.stringify(payload));
 
       setIsSaved(true);
-      await AsyncStorage.setItem(
-        'PackingFormData',
-        JSON.stringify({ seedVariety, date, quantity, photoUris, isSaved: true })
-      );
       Alert.alert("Success", "Packing event recorded successfully.");
       setExpanded(false);
     } catch (error) {
-      Alert.alert("Error", error.message);
+      console.log("Axios request error:", error);
+
+      let errorMessage = "Failed to save/send data.";
+
+      if (error.response) {
+        console.log("Error response data:", error.response.data);
+        console.log("Error response status:", error.response.status);
+        console.log("Error response headers:", error.response.headers);
+        errorMessage = error.response.data?.error || `Server responded with status ${error.response.status}`;
+      } else if (error.request) {
+        console.log("Error request:", error.request);
+        errorMessage = "No response received from server. Check network connection and server status.";
+      } else {
+        console.log("Error message:", error.message);
+        errorMessage = error.message;
+      }
+
+      Alert.alert("Error", errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -80,7 +157,7 @@ export default function PackingForm({ seedVariety }) {
         { text: "No", style: "cancel" },
         { text: "Yes", onPress: () => {
             setQuantity('');
-            setPhotoUris([]);
+            setPhotoBase64s([]);
             setIsSaved(false);
             setExpanded(false);
           }
@@ -96,21 +173,36 @@ export default function PackingForm({ seedVariety }) {
         Alert.alert("Permission Denied", "Camera permission is required to capture an image.");
         return;
       }
+
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         quality: 0.7,
+        base64: true,
       });
+
       if (!result.canceled) {
-        setPhotoUris([...photoUris, result.assets[0].uri]);
-        Alert.alert("Success", "Image captured successfully!");
+        if (result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          if (asset.base64) {
+            setPhotoBase64s([...photoBase64s, asset.base64]);
+            Alert.alert("Success", "Image captured and encoded successfully!");
+          } else {
+            Alert.alert("Encoding Failed", "ImagePicker did not provide Base64 data.");
+            console.error("ImagePicker result missing base64:", asset);
+          }
+        } else {
+          Alert.alert("Capture Failed", "No image asset found in the capture result.");
+        }
       }
     } catch (error) {
-      Alert.alert("Capture Error", "Failed to capture image: " + error.message);
+      Alert.alert("Capture Error", "Failed to capture or encode image: " + error.message);
+      console.error("Image capture/encoding error:", error);
     }
   };
 
   const today = new Date();
-  const isCompleted = isSaved && isSameDay(date, today);
+  const isCompleted = isSaved && isSameOrBefore(date, today);
+  const isPending = !isCompleted;
 
   return (
     <View style={styles.card}>
@@ -119,10 +211,16 @@ export default function PackingForm({ seedVariety }) {
         <View style={styles.headerTextContainer}>
           <Text style={styles.headerText}>Packing</Text>
         </View>
-        {isCompleted && (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>Completed</Text>
-          </View>
+        {!isLoading && (
+          isCompleted ? (
+            <View style={styles.statusBadge}>
+              <Text style={styles.statusText}>Completed</Text>
+            </View>
+          ) : (
+            <View style={[styles.statusBadge, { backgroundColor: '#FFF9C4', borderColor: '#FBC02D' }]}>
+              <Text style={[styles.statusText, { color: '#F57F17' }]}>Pending</Text>
+            </View>
+          )
         )}
         <Animated.View style={{ transform: [{ rotate: rotateArrow }] }}>
           <Ionicons name="chevron-down" size={22} color="#4CAF50" />
@@ -131,92 +229,108 @@ export default function PackingForm({ seedVariety }) {
 
       {expanded && (
         <Animated.View style={[styles.body, getBodyStyle()]}>
-          <Text style={styles.label}>Seed Variety</Text>
-          <View style={styles.disabledField}>
-            <Text style={styles.disabledText}>
-              {seedVariety ? seedVariety : "Not selected"}
-            </Text>
-          </View>
-
-          <Text style={styles.label}>Date of Packing</Text>
-          <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateInput}>
-            <Text style={styles.dateText}>{date.toDateString()}</Text>
-            <Ionicons name="calendar" size={20} color="green" />
-          </TouchableOpacity>
-          {showDatePicker && (
-            <DateTimePicker
-              value={date}
-              mode="date"
-              display="default"
-              onChange={(event, selectedDate) => {
-                setShowDatePicker(false);
-                if (selectedDate) setDate(selectedDate);
-              }}
-            />
-          )}
-
-          <Text style={styles.label}>Quantity (Kg)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter quantity"
-            keyboardType="numeric"
-            value={quantity}
-            onChangeText={setQuantity}
-          />
-
-          <Text style={styles.label}>Photos (Geo-tagged)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
-            {photoUris.length === 0 ? (
-              <View style={styles.squarePlaceholder}>
-                <Text style={styles.imagePlaceholder}>No images captured</Text>
+          {isLoading ? (
+            <ActivityIndicator size="large" color="#4CAF50" />
+          ) : (
+            <>
+              <Text style={styles.label}>Seed Variety</Text>
+              <View style={styles.disabledField}>
+                <Text style={styles.disabledText}>
+                  {seedVariety ? seedVariety : "Not selected"}
+                </Text>
               </View>
-            ) : (
-              photoUris.map((uri, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={styles.squareImageBox}
-                  onPress={() => {
-                    setSelectedImage(uri);
-                    setModalVisible(true);
-                  }}
-                >
-                  <Image source={{ uri }} style={styles.squareImage} />
-                </TouchableOpacity>
-              ))
-            )}
-          </ScrollView>
-          <Modal
-            visible={modalVisible}
-            transparent
-            animationType="fade"
-            onRequestClose={() => setModalVisible(false)}
-          >
-            <View style={styles.modalContainer}>
-              <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
-                <Ionicons name="close-circle" size={40} color="#fff" />
+
+              <Text style={styles.label}>Date of Packing</Text>
+              <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateInput}>
+                <Text style={styles.dateText}>{date.toDateString()}</Text>
+                <Ionicons name="calendar" size={20} color="green" />
               </TouchableOpacity>
-              {selectedImage && (
-                <Image
-                  source={{ uri: selectedImage }}
-                  style={styles.modalImage}
-                  resizeMode="contain"
+              {showDatePicker && (
+                <DateTimePicker
+                  value={date}
+                  mode="date"
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) setDate(selectedDate);
+                  }}
                 />
               )}
-            </View>
-          </Modal>
 
-          <TouchableOpacity style={styles.captureButton} onPress={handleCaptureImage}>
-            <Text style={styles.captureButtonText}>Capture Image</Text>
-          </TouchableOpacity>
+              <Text style={styles.label}>Quantity (Kg)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter Quantity"
+                keyboardType="numeric"
+                value={Quantity}
+                onChangeText={setQuantity}
+              />
 
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancel}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.saveButton]} onPress={handleSave}>
-              <Text style={styles.saveButtonText}>Save</Text>
-            </TouchableOpacity>
-          </View>
+              <Text style={styles.label}>Photos (Geo-tagged)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+                {photoBase64s.length === 0 ? (
+                  <View style={styles.squarePlaceholder}>
+                    <Text style={styles.imagePlaceholder}>No images captured</Text>
+                  </View>
+                ) : (
+                  photoBase64s.map((base64, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={styles.squareImageBox}
+                      onPress={() => {
+                        setSelectedImage(base64);
+                        setModalVisible(true);
+                      }}
+                    >
+                      <Image source={{ uri: formatBase64ForImage(base64) }} style={styles.squareImage} />
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+              <Modal
+                visible={modalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setModalVisible(false)}
+              >
+                <View style={styles.modalContainer}>
+                  <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
+                    <Ionicons name="close-circle" size={40} color="#fff" />
+                  </TouchableOpacity>
+                  {selectedImage && (
+                    <Image
+                      source={{ uri: formatBase64ForImage(selectedImage) }}
+                      style={styles.modalImage}
+                      resizeMode="contain"
+                    />
+                  )}
+                </View>
+              </Modal>
+
+              <TouchableOpacity style={styles.captureButton} onPress={handleCaptureImage}>
+                <Text style={styles.captureButtonText}>Capture Image</Text>
+              </TouchableOpacity>
+
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancel}>
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.saveButton, (isLoading || (isSaved && isSameOrBefore(date, today))) && styles.disabledButton]}
+                  onPress={handleSave}
+                  disabled={isLoading || (isSaved && isSameOrBefore(date, today))}
+                >
+                  <Text style={styles.saveButtonText}>{isLoading ? 'Saving...' : 'Save'}</Text>
+                </TouchableOpacity>
+              </View>
+
+              {isSaved && (
+                <TouchableOpacity style={styles.modifyButton}>
+                  <Text style={styles.buttonText}>Request Modification</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
         </Animated.View>
       )}
     </View>
@@ -418,5 +532,22 @@ const styles = StyleSheet.create({
     width: '100%',
     color: '#222',
     backgroundColor: 'transparent',
+  },
+  modifyButton: {
+    marginTop: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderRadius: 8,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  buttonText: {
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  disabledButton: {
+    backgroundColor: '#A5D6A7',
+    borderColor: '#A5D6A7',
   },
 });

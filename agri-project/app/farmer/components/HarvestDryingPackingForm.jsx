@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated, ScrollView, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated, ScrollView, Modal, ActivityIndicator, Dimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import useAccordionAnimation from '../hooks/useAccordionAnimation';
 import { Picker } from '@react-native-picker/picker';
 import ImageGallery from './ImageGallery';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 // Constants
 const VARIETIES = ["K1", "K2"];
@@ -19,29 +21,38 @@ export default function HarvestDryingPackingForm({ seedVariety }) {
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedVariety, setSelectedVariety] = useState('');
-  const [photoUris, setPhotoUris] = useState([]);
+  const [photoBase64s, setPhotoBase64s] = useState([]); // Changed to store Base64 strings
   const [isSaved, setIsSaved] = useState(false);
   const [records, setRecords] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [isLoading, setIsLoading] = useState(true); // Add loading state
 
   // Use the custom accordion animation hook
   const { rotateArrow, getBodyStyle } = useAccordionAnimation(expanded);
 
   // Load saved data from AsyncStorage
   useEffect(() => {
-    AsyncStorage.getItem('HarvestDryingPackingFormData')
-      .then(data => {
+    const loadFormData = async () => {
+      try {
+        const data = await AsyncStorage.getItem('HarvestDryingPackingFormData');
         if (data) {
           const saved = JSON.parse(data);
           setDate(new Date(saved.date));
-          setSelectedVariety(saved.seedVariety);
-          setPhotoUris(saved.photoUris || []);
+          setSelectedVariety(saved.seedVariety || seedVariety);
+          setPhotoBase64s(saved.photoBase64s || []); // Load Base64 strings
           setIsSaved(saved.isSaved);
+          setRecords(saved.records || []);
           console.log("Loaded saved Harvest:", saved);
         }
-      })
-      .catch(err => console.log("Error loading HarvestDryingPackingFormData", err));
+      } catch (err) {
+        console.log("Error loading HarvestDryingPackingFormData", err);
+      } finally {
+        setIsLoading(false); // Set loading to false after attempt
+      }
+    };
+    
+    loadFormData();
   }, []);
 
   // Helper function to compare only date part (ignoring time)
@@ -53,34 +64,108 @@ export default function HarvestDryingPackingForm({ seedVariety }) {
     );
   }
 
+  function isSameOrBefore(date1, date2) {
+    return (
+      date1.getFullYear() < date2.getFullYear() ||
+      (date1.getFullYear() === date2.getFullYear() && date1.getMonth() < date2.getMonth()) ||
+      (date1.getFullYear() === date2.getFullYear() && date1.getMonth() === date2.getMonth() && date1.getDate() <= date2.getDate())
+    );
+  }
+  
+  // Helper function to format Base64 for Image component source
+  const formatBase64ForImage = (base64) => {
+    return `data:image/jpeg;base64,${base64}`;
+  };
+
   // Function to handle saving data
   const handleSave = async () => {
-    try {
-      // Validation
-      // if (!selectedVariety) throw new Error("Please select a seed variety.");
-      if (photoUris.length === 0) throw new Error("Please capture at least one photo of the harvest.");
+    const today = new Date();
+    
+    // Exit if still loading or if already saved and completed today
+    if (isLoading || (isSaved && isSameDay(date, today))) {
+      if (isLoading) {
+        Alert.alert("Info", "Form is currently loading. Please wait.");
+      } else if (isSaved && isSameDay(date, today)) {
+        Alert.alert("Info", "Harvest form is already marked as completed for today.");
+      }
+      return;
+    }
 
-      // Create record object
+    try {
+      // Validation with early returns
+      if (!seedVariety) {
+        Alert.alert("Validation Error", "Please select a seed variety.");
+        return;
+      }
+      if (photoBase64s.length === 0) {
+        Alert.alert("Validation Error", "Please capture at least one photo of the harvest.");
+        return;
+      }
+
+      // Show loading indicator
+      setIsLoading(true);
+      
+      // Create record object and prepare payload
       const newRecord = {
         id: Date.now(),
         date: date.toDateString(),
-        variety: selectedVariety,
-        photoUris,
+        variety: seedVariety,
         timestamp: new Date(),
       };
+      
+      // Prepare data for backend
+      const payload = {
+        date: date.toISOString(),
+        seedVariety: seedVariety,
+        photoBase64s: photoBase64s,
+        records: [...records, newRecord],
+        isSaved: true,
+        formType: 'harvest-drying-packing' // Add form type identifier
+      };
 
+      console.log("Preparing to send data to backend...");
+      
+      // Send data to backend
+      const response = await axios.post(
+        'http://4.247.169.244:8080/generate-qr/',
+        payload,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+
+      console.log("Backend response status:", response.status);
+      console.log("Backend response data:", response.data);
+
+      // Update local state
       setRecords([...records, newRecord]);
       setIsSaved(true);
-      await AsyncStorage.setItem('HarvestDryingPackingFormData', JSON.stringify({
-        date, seedVariety: selectedVariety, photoUris, isSaved: true
-      }));
+      
+      // Save to AsyncStorage only upon successful backend response
+      await AsyncStorage.setItem('HarvestDryingPackingFormData', JSON.stringify(payload));
+      
       Alert.alert("Success", "Harvest event recorded successfully.");
       setExpanded(false);
-      
-      // Reset form for next entry
-      resetForm();
     } catch (error) {
-      Alert.alert("Error", error.message);
+      console.log("Axios request error:", error);
+
+      let errorMessage = "Failed to save/send data.";
+
+      if (error.response) {
+        console.log("Error response data:", error.response.data);
+        console.log("Error response status:", error.response.status);
+        console.log("Error response headers:", error.response.headers);
+        errorMessage = error.response.data?.error || `Server responded with status ${error.response.status}`;
+      } else if (error.request) {
+        console.log("Error request:", error.request);
+        errorMessage = "No response received from server. Check network connection and server status.";
+      } else {
+        console.log("Error message:", error.message);
+        errorMessage = error.message;
+      }
+
+      Alert.alert("Error", errorMessage);
+    } finally {
+      // Always reset loading state
+      setIsLoading(false);
     }
   };
 
@@ -88,7 +173,7 @@ export default function HarvestDryingPackingForm({ seedVariety }) {
   const resetForm = () => {
     setSelectedVariety('');
     setDate(new Date());
-    setPhotoUris([]);
+    setPhotoBase64s([]);
   };
 
   // Function to handle cancel
@@ -108,30 +193,44 @@ export default function HarvestDryingPackingForm({ seedVariety }) {
     );
   };
 
-  // Function to capture image
+  // Function to capture image with Base64 encoding
   const handleCaptureImage = async () => {
     try {
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
       if (permissionResult.status !== 'granted') {
-        Alert.alert("Permission Denied", "Camera permission is required.");
+        Alert.alert("Permission Denied", "Camera permission is required to capture an image.");
         return;
       }
+
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         quality: 0.7,
+        base64: true, // Get Base64 directly from ImagePicker
       });
+
       if (!result.canceled) {
-        setPhotoUris([...photoUris, result.assets[0].uri]);
-        Alert.alert("Success", "Image captured successfully!");
+        if (result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          if (asset.base64) {
+            setPhotoBase64s([...photoBase64s, asset.base64]);
+            Alert.alert("Success", "Image captured and encoded successfully!");
+          } else {
+            Alert.alert("Encoding Failed", "ImagePicker did not provide Base64 data.");
+            console.error("ImagePicker result missing base64:", asset);
+          }
+        } else {
+          Alert.alert("Capture Failed", "No image asset found in the capture result.");
+        }
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to capture image: " + error.message);
+      Alert.alert("Capture Error", "Failed to capture or encode image: " + error.message);
+      console.error("Image capture/encoding error:", error);
     }
   };
 
-  // Check if completed today
   const today = new Date();
-  const isCompleted = isSaved && isSameDay(date, today);
+  const isCompleted = isSaved && isSameOrBefore(date, today);
+  const isPending = !isCompleted;
 
   return (
     <View style={styles.card}>
@@ -140,10 +239,16 @@ export default function HarvestDryingPackingForm({ seedVariety }) {
         <View style={styles.headerTextContainer}>
           <Text style={styles.headerText}>Harvest</Text>
         </View>
-        {isCompleted && (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>Completed</Text>
-          </View>
+        {!isLoading && (
+          isCompleted ? (
+            <View style={styles.statusBadge}>
+              <Text style={styles.statusText}>Completed</Text>
+            </View>
+          ) : (
+            <View style={[styles.statusBadge, { backgroundColor: '#FFF9C4', borderColor: '#FBC02D' }]}>
+              <Text style={[styles.statusText, { color: '#F57F17' }]}>Pending</Text>
+            </View>
+          )
         )}
         <Animated.View style={{ transform: [{ rotate: rotateArrow }] }}>
           <Ionicons name="chevron-down" size={22} color="#4CAF50" />
@@ -154,114 +259,126 @@ export default function HarvestDryingPackingForm({ seedVariety }) {
 
       {expanded && (
         <Animated.View style={[styles.body, getBodyStyle()]}>
-          {/* Seed Variety Selection */}
-          <Text style={styles.label}>Seed Variety</Text>
-          <View style={styles.disabledField}>
-            <Text style={styles.disabledText}>
-              {seedVariety ? seedVariety : "Not selected"}
-            </Text>
-          </View>
-
-          {/* Date Selection */}
-          <Text style={styles.label}>Date of Harvest</Text>
-          <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateInput}>
-            <Text style={styles.dateText}>{date.toDateString()}</Text>
-            <Ionicons name="calendar" size={20} color="green" />
-          </TouchableOpacity>
-          {showDatePicker && (
-            <DateTimePicker
-              value={date}
-              mode="date"
-              display="default"
-              onChange={(event, selectedDate) => {
-                setShowDatePicker(false);
-                if (selectedDate) setDate(selectedDate);
-              }}
-            />
-          )}
-
-          {/* Photo Capture */}
-          <Text style={styles.label}>Photos (Geo-tagged)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
-            {photoUris.length === 0 ? (
-              <View style={styles.squarePlaceholder}>
-                <Text style={styles.imagePlaceholder}>No images captured</Text>
+          {isLoading ? (
+            <ActivityIndicator size="large" color="#4CAF50" />
+          ) : (
+            <>
+              {/* Seed Variety Selection */}
+              <Text style={styles.label}>Seed Variety</Text>
+              <View style={styles.disabledField}>
+                <Text style={styles.disabledText}>
+                  {seedVariety ? seedVariety : "Not selected"}
+                </Text>
               </View>
-            ) : (
-              photoUris.map((uri, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={styles.squareImageBox}
-                  onPress={() => {
-                    setSelectedImage(uri);
-                    setModalVisible(true);
-                  }}
-                >
-                  <Image source={{ uri }} style={styles.squareImage} />
-                </TouchableOpacity>
-              ))
-            )}
-          </ScrollView>
-          <Modal
-            visible={modalVisible}
-            transparent
-            animationType="fade"
-            onRequestClose={() => setModalVisible(false)}
-          >
-            <View style={styles.modalContainer}>
-              <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
-                <Ionicons name="close-circle" size={40} color="#fff" />
+
+              {/* Date Selection */}
+              <Text style={styles.label}>Date of Harvest</Text>
+              <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateInput}>
+                <Text style={styles.dateText}>{date.toDateString()}</Text>
+                <Ionicons name="calendar" size={20} color="green" />
               </TouchableOpacity>
-              {selectedImage && (
-                <Image source={{ uri: selectedImage }} style={styles.modalImage} resizeMode="contain" />
+              {showDatePicker && (
+                <DateTimePicker
+                  value={date}
+                  mode="date"
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) setDate(selectedDate);
+                  }}
+                />
               )}
-            </View>
-          </Modal>
 
-          <TouchableOpacity style={styles.captureButton} onPress={handleCaptureImage}>
-            <Text style={styles.captureButtonText}>Capture Image</Text>
-          </TouchableOpacity>
-
-          {/* Previous Records Summary (if any) */}
-          {records.length > 0 && (
-            <View style={styles.recordsContainer}>
-              <Text style={styles.recordsTitle}>Previous Records</Text>
-              <ScrollView style={styles.recordsList} nestedScrollEnabled={true}>
-                {records.map(record => (
-                  <View key={record.id} style={styles.recordItem}>
-                    <Text style={styles.recordType}>
-                      {record.variety ? `Variety: ${record.variety}` : ''}
-                    </Text>
-                    <Text style={styles.recordDate}>
-                      {record.date}
-                    </Text>
+              {/* Photo Capture */}
+              <Text style={styles.label}>Photos (Geo-tagged)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+                {photoBase64s.length === 0 ? (
+                  <View style={styles.squarePlaceholder}>
+                    <Text style={styles.imagePlaceholder}>No images captured</Text>
                   </View>
-                ))}
+                ) : (
+                  photoBase64s.map((base64, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={styles.squareImageBox}
+                      onPress={() => {
+                        setSelectedImage(base64);
+                        setModalVisible(true);
+                      }}
+                    >
+                      <Image source={{ uri: formatBase64ForImage(base64) }} style={styles.squareImage} />
+                    </TouchableOpacity>
+                  ))
+                )}
               </ScrollView>
-            </View>
-          )}
+              <Modal
+                visible={modalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setModalVisible(false)}
+              >
+                <View style={styles.modalContainer}>
+                  <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
+                    <Ionicons name="close-circle" size={40} color="#fff" />
+                  </TouchableOpacity>
+                  {selectedImage && (
+                    <Image source={{ uri: formatBase64ForImage(selectedImage) }} style={styles.modalImage} resizeMode="contain" />
+                  )}
+                </View>
+              </Modal>
 
-          {/* Action Buttons */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancel}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={[styles.button, styles.saveButton]} onPress={handleSave}>
-              <Text style={styles.saveButtonText}>Save</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity style={styles.captureButton} onPress={handleCaptureImage}>
+                <Text style={styles.captureButtonText}>Capture Image</Text>
+              </TouchableOpacity>
 
-          {isSaved && (
-            <TouchableOpacity style={styles.modifyButton}>
-              <Text style={styles.buttonText}>Request Modification</Text>
-            </TouchableOpacity>
+              {/* Previous Records Summary (if any) */}
+              {records.length > 0 && (
+                <View style={styles.recordsContainer}>
+                  <Text style={styles.recordsTitle}>Previous Records</Text>
+                  <ScrollView style={styles.recordsList} nestedScrollEnabled={true}>
+                    {records.map(record => (
+                      <View key={record.id} style={styles.recordItem}>
+                        <Text style={styles.recordType}>
+                          {record.variety ? `Variety: ${record.variety}` : ''}
+                        </Text>
+                        <Text style={styles.recordDate}>
+                          {record.date}
+                        </Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Action Buttons */}
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancel}>
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.button, styles.saveButton, (isLoading || (isSaved && isSameOrBefore(date, today))) && styles.disabledButton]}
+                  onPress={handleSave}
+                  disabled={isLoading || (isSaved && isSameOrBefore(date, today))}
+                >
+                  <Text style={styles.saveButtonText}>{isLoading ? 'Saving...' : 'Save'}</Text>
+                </TouchableOpacity>
+              </View>
+
+              {isSaved && (
+                <TouchableOpacity style={styles.modifyButton}>
+                  <Text style={styles.buttonText}>Request Modification</Text>
+                </TouchableOpacity>
+              )}
+            </>
           )}
         </Animated.View>
       )}
     </View>
   );
 }
+
+const screenWidth = Dimensions.get('window').width;
 
 const styles = StyleSheet.create({
   card: {
@@ -524,5 +641,9 @@ const styles = StyleSheet.create({
   modalImage: {
     width: '90%',
     height: '70%',
+  },
+  disabledButton: {
+    backgroundColor: '#A5D6A7',
+    borderColor: '#A5D6A7',
   },
 });
