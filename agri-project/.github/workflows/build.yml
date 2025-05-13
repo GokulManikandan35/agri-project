@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies # <-- Add working-directory here
         run: npm install
-        working-directory: ./node # <--- REPLACE THIS with the actual path
+        working-directory: ./code # <--- REPLACE THIS with the actual path
 
       - name: EAS build Android (development) # <-- Add working-directory here too
         run: eas build --platform android --profile development --non-interactive
