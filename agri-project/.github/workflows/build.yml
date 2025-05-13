@@ -1,11 +1,13 @@
-name: Android Build
+name: Expo Build (Android)
 
 on:
   push:
-    branches: [main]
+    branches:
+      - master  # or your default branch
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
 
 jobs:
-  build:
+  build-android:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,14 +19,14 @@ jobs:
         with:
           node-version: 18
 
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Authenticate with Expo
+        run: eas login --token ${{ secrets.EXPO_TOKEN }}
+
       - name: Install dependencies
         run: npm install
 
-      - name: Setup Expo
-        run: npm install -g expo-cli eas-cli
-
-      - name: Login to Expo
-        run: eas whoami || eas login --token ${{ secrets.EXPO_TOKEN }}
-
-      - name: Run EAS Build
-        run: eas build --platform android --non-interactive --profile development
+      - name: EAS build Android (development)
+        run: eas build --platform android --profile development --non-interactive
