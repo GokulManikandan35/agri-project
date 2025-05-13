@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 
 // Replace dummy data with real farmer details and remove lots
 const MOCK_FARMERS = [
-  { id: 'M001', name: 'Munusamy', location: 'Virudhunagar' }
+  { id: '(FAR5949)', name: 'Munusamy', location: 'Virudhunagar' }
 ];
 
 const getCurrentDate = () => {
@@ -34,6 +34,7 @@ const FPOHomeScreen = () => {
   const [filteredFarmers, setFilteredFarmers] = useState(MOCK_FARMERS);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [selectedSeedVariety, setSelectedSeedVariety] = useState('K1'); // or fetch dynamically
 
   // Filter farmers based on search query
   useEffect(() => {
@@ -89,7 +90,15 @@ const FPOHomeScreen = () => {
   }, []);
 
   const renderFarmerItem = ({ item }) => (
-    <TouchableOpacity style={styles.farmerCard} onPress={() => navigation.navigate('fpo/screens/FarmerDetailsPage')}>
+    <TouchableOpacity
+      style={styles.farmerCard}
+      onPress={() =>
+        navigation.navigate('fpo/screens/FarmerDetailsPage', {
+          seedVariety: selectedSeedVariety,
+          farmerId: item.id,
+        })
+      }
+    >
       <View style={styles.farmerHeader}>
         <View style={styles.farmerAvatar}>
           <Text style={styles.avatarText}>{item.name.charAt(0)}</Text>
@@ -132,7 +141,7 @@ const FPOHomeScreen = () => {
         <View style={styles.profileContainer}>
           <Image
             style={styles.profileImage}
-            source={require('../../../assets/images/farmer1.jpg')}
+            source={require('../../../assets/images/farmer2.jpeg')}
           />
           <View>
             <Text style={styles.welcomeText}>Welcome back,</Text>

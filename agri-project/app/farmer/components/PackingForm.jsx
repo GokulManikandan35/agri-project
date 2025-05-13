@@ -1,12 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Image, StyleSheet, Alert, Animated, ScrollView, Modal, Dimensions, ActivityIndicator } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
-import useAccordionAnimation from '../hooks/useAccordionAnimation';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  TextInput,
+  Image,
+  StyleSheet,
+  Alert,
+  Animated,
+  ScrollView,
+  Modal,
+  Dimensions,
+  ActivityIndicator,
+} from "react-native";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
+import useAccordionAnimation from "../hooks/useAccordionAnimation";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 
 const seedVarieties = ["K1", "K2"];
 
@@ -14,7 +27,7 @@ export default function PackingForm({ seedVariety }) {
   const [expanded, setExpanded] = useState(false);
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [Quantity, setQuantity] = useState('');
+  const [Quantity, setQuantity] = useState("");
   const [photoBase64s, setPhotoBase64s] = useState([]);
   const [isSaved, setIsSaved] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -26,7 +39,7 @@ export default function PackingForm({ seedVariety }) {
   useEffect(() => {
     const loadFormData = async () => {
       try {
-        const data = await AsyncStorage.getItem('PackingFormData');
+        const data = await AsyncStorage.getItem("PackingFormData");
         if (data) {
           const saved = JSON.parse(data);
           console.log("Loaded PackingFormData", saved);
@@ -63,8 +76,11 @@ export default function PackingForm({ seedVariety }) {
     // Returns true if date1 <= date2 (ignoring time)
     return (
       date1.getFullYear() < date2.getFullYear() ||
-      (date1.getFullYear() === date2.getFullYear() && date1.getMonth() < date2.getMonth()) ||
-      (date1.getFullYear() === date2.getFullYear() && date1.getMonth() === date2.getMonth() && date1.getDate() <= date2.getDate())
+      (date1.getFullYear() === date2.getFullYear() &&
+        date1.getMonth() < date2.getMonth()) ||
+      (date1.getFullYear() === date2.getFullYear() &&
+        date1.getMonth() === date2.getMonth() &&
+        date1.getDate() <= date2.getDate())
     );
   }
 
@@ -79,7 +95,10 @@ export default function PackingForm({ seedVariety }) {
       if (isLoading) {
         Alert.alert("Info", "Form is currently loading. Please wait.");
       } else if (isSaved && isSameOrBefore(date, today)) {
-        Alert.alert("Info", "Packing form is already marked as completed for today.");
+        Alert.alert(
+          "Info",
+          "Packing form is already marked as completed for today."
+        );
       }
       return;
     }
@@ -94,33 +113,34 @@ export default function PackingForm({ seedVariety }) {
         return;
       }
       if (photoBase64s.length === 0) {
-        Alert.alert("Validation Error", "Please capture at least one photo of the packed product.");
+        Alert.alert(
+          "Validation Error",
+          "Please capture at least one photo of the packed product."
+        );
         return;
       }
 
       setIsLoading(true);
 
       const payload = {
-        date: date.toISOString(),
-        seedVariety,
-        Quantity,
-        photoBase64s,
-        isSaved: true,
-        formType: 'packing'
+        seed_variety: seedVariety,                        // Use snake_case to match model
+        date: date.toISOString().split("T")[0],           // 'YYYY-MM-DD'
+        quantity: Quantity,                               // Use lowercase 'quantity'
+        photo: photoBase64s[0] || "",                     // Only send the first photo as 'photo'
       };
 
-      console.log("Preparing to send data to backend...");
+      console.log("Preparing to send data to backend...", JSON.stringify(payload, null, 2));
 
       const response = await axios.post(
-        'http://4.247.169.244:8080/generate-qr/',
+        "http://4.247.169.244:8080/create_packaging/",
         payload,
-        { headers: { 'Content-Type': 'application/json' } }
+        { headers: { "Content-Type": "application/json" }, params: { id: 100 } }
       );
 
       console.log("Backend response status:", response.status);
       console.log("Backend response data:", response.data);
 
-      await AsyncStorage.setItem('PackingFormData', JSON.stringify(payload));
+      await AsyncStorage.setItem("PackingFormData", JSON.stringify(payload));
 
       setIsSaved(true);
       Alert.alert("Success", "Packing event recorded successfully.");
@@ -134,10 +154,13 @@ export default function PackingForm({ seedVariety }) {
         console.log("Error response data:", error.response.data);
         console.log("Error response status:", error.response.status);
         console.log("Error response headers:", error.response.headers);
-        errorMessage = error.response.data?.error || `Server responded with status ${error.response.status}`;
+        errorMessage =
+          error.response.data?.error ||
+          `Server responded with status ${error.response.status}`;
       } else if (error.request) {
         console.log("Error request:", error.request);
-        errorMessage = "No response received from server. Check network connection and server status.";
+        errorMessage =
+          "No response received from server. Check network connection and server status.";
       } else {
         console.log("Error message:", error.message);
         errorMessage = error.message;
@@ -155,22 +178,28 @@ export default function PackingForm({ seedVariety }) {
       "Are you sure you want to discard your changes?",
       [
         { text: "No", style: "cancel" },
-        { text: "Yes", onPress: () => {
-            setQuantity('');
+        {
+          text: "Yes",
+          onPress: () => {
+            setQuantity("");
             setPhotoBase64s([]);
             setIsSaved(false);
             setExpanded(false);
-          }
-        }
+          },
+        },
       ]
     );
   };
 
   const handleCaptureImage = async () => {
     try {
-      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-      if (permissionResult.status !== 'granted') {
-        Alert.alert("Permission Denied", "Camera permission is required to capture an image.");
+      const permissionResult =
+        await ImagePicker.requestCameraPermissionsAsync();
+      if (permissionResult.status !== "granted") {
+        Alert.alert(
+          "Permission Denied",
+          "Camera permission is required to capture an image."
+        );
         return;
       }
 
@@ -187,15 +216,24 @@ export default function PackingForm({ seedVariety }) {
             setPhotoBase64s([...photoBase64s, asset.base64]);
             Alert.alert("Success", "Image captured and encoded successfully!");
           } else {
-            Alert.alert("Encoding Failed", "ImagePicker did not provide Base64 data.");
+            Alert.alert(
+              "Encoding Failed",
+              "ImagePicker did not provide Base64 data."
+            );
             console.error("ImagePicker result missing base64:", asset);
           }
         } else {
-          Alert.alert("Capture Failed", "No image asset found in the capture result.");
+          Alert.alert(
+            "Capture Failed",
+            "No image asset found in the capture result."
+          );
         }
       }
     } catch (error) {
-      Alert.alert("Capture Error", "Failed to capture or encode image: " + error.message);
+      Alert.alert(
+        "Capture Error",
+        "Failed to capture or encode image: " + error.message
+      );
       console.error("Image capture/encoding error:", error);
     }
   };
@@ -206,22 +244,36 @@ export default function PackingForm({ seedVariety }) {
 
   return (
     <View style={styles.card}>
-      <TouchableOpacity style={styles.header} onPress={() => setExpanded(!expanded)}>
-        <MaterialCommunityIcons name="package-variant-closed" size={24} color="white" style={styles.headerIcon} />
+      <TouchableOpacity
+        style={styles.header}
+        onPress={() => setExpanded(!expanded)}
+      >
+        <MaterialCommunityIcons
+          name="package-variant-closed"
+          size={24}
+          color="white"
+          style={styles.headerIcon}
+        />
         <View style={styles.headerTextContainer}>
           <Text style={styles.headerText}>Packing</Text>
         </View>
-        {!isLoading && (
-          isCompleted ? (
+        {!isLoading &&
+          (isCompleted ? (
             <View style={styles.statusBadge}>
               <Text style={styles.statusText}>Completed</Text>
             </View>
           ) : (
-            <View style={[styles.statusBadge, { backgroundColor: '#FFF9C4', borderColor: '#FBC02D' }]}>
-              <Text style={[styles.statusText, { color: '#F57F17' }]}>Pending</Text>
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: "#FFF9C4", borderColor: "#FBC02D" },
+              ]}
+            >
+              <Text style={[styles.statusText, { color: "#F57F17" }]}>
+                Pending
+              </Text>
             </View>
-          )
-        )}
+          ))}
         <Animated.View style={{ transform: [{ rotate: rotateArrow }] }}>
           <Ionicons name="chevron-down" size={22} color="#4CAF50" />
         </Animated.View>
@@ -241,7 +293,10 @@ export default function PackingForm({ seedVariety }) {
               </View>
 
               <Text style={styles.label}>Date of Packing</Text>
-              <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateInput}>
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                style={styles.dateInput}
+              >
                 <Text style={styles.dateText}>{date.toDateString()}</Text>
                 <Ionicons name="calendar" size={20} color="green" />
               </TouchableOpacity>
@@ -267,10 +322,16 @@ export default function PackingForm({ seedVariety }) {
               />
 
               <Text style={styles.label}>Photos (Geo-tagged)</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginVertical: 8 }}
+              >
                 {photoBase64s.length === 0 ? (
                   <View style={styles.squarePlaceholder}>
-                    <Text style={styles.imagePlaceholder}>No images captured</Text>
+                    <Text style={styles.imagePlaceholder}>
+                      No images captured
+                    </Text>
                   </View>
                 ) : (
                   photoBase64s.map((base64, idx) => (
@@ -282,7 +343,10 @@ export default function PackingForm({ seedVariety }) {
                         setModalVisible(true);
                       }}
                     >
-                      <Image source={{ uri: formatBase64ForImage(base64) }} style={styles.squareImage} />
+                      <Image
+                        source={{ uri: formatBase64ForImage(base64) }}
+                        style={styles.squareImage}
+                      />
                     </TouchableOpacity>
                   ))
                 )}
@@ -294,7 +358,10 @@ export default function PackingForm({ seedVariety }) {
                 onRequestClose={() => setModalVisible(false)}
               >
                 <View style={styles.modalContainer}>
-                  <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
+                  <TouchableOpacity
+                    style={styles.modalClose}
+                    onPress={() => setModalVisible(false)}
+                  >
                     <Ionicons name="close-circle" size={40} color="#fff" />
                   </TouchableOpacity>
                   {selectedImage && (
@@ -307,20 +374,35 @@ export default function PackingForm({ seedVariety }) {
                 </View>
               </Modal>
 
-              <TouchableOpacity style={styles.captureButton} onPress={handleCaptureImage}>
+              <TouchableOpacity
+                style={styles.captureButton}
+                onPress={handleCaptureImage}
+              >
                 <Text style={styles.captureButtonText}>Capture Image</Text>
               </TouchableOpacity>
 
               <View style={styles.buttonContainer}>
-                <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancel}>
+                <TouchableOpacity
+                  style={[styles.button, styles.cancelButton]}
+                  onPress={handleCancel}
+                >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.button, styles.saveButton, (isLoading || (isSaved && isSameOrBefore(date, today))) && styles.disabledButton]}
+                  style={[
+                    styles.button,
+                    styles.saveButton,
+                    (isLoading || (isSaved && isSameOrBefore(date, today))) &&
+                      styles.disabledButton,
+                  ]}
                   onPress={handleSave}
-                  disabled={isLoading || (isSaved && isSameOrBefore(date, today))}
+                  disabled={
+                    isLoading || (isSaved && isSameOrBefore(date, today))
+                  }
                 >
-                  <Text style={styles.saveButtonText}>{isLoading ? 'Saving...' : 'Save'}</Text>
+                  <Text style={styles.saveButtonText}>
+                    {isLoading ? "Saving..." : "Save"}
+                  </Text>
                 </TouchableOpacity>
               </View>
 
@@ -337,28 +419,28 @@ export default function PackingForm({ seedVariety }) {
   );
 }
 
-const screenWidth = Dimensions.get('window').width;
+const screenWidth = Dimensions.get("window").width;
 
 const styles = StyleSheet.create({
   card: {
     margin: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#4CAF50',
-    overflow: 'hidden',
-    backgroundColor: '#fff',
+    borderColor: "#4CAF50",
+    overflow: "hidden",
+    backgroundColor: "#fff",
     elevation: 2,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E8F5E9',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E8F5E9",
     padding: 14,
     borderBottomWidth: 1,
-    borderColor: '#C8E6C9',
+    borderColor: "#C8E6C9",
   },
   headerIcon: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: "#4CAF50",
     padding: 6,
     borderRadius: 16,
     marginRight: 10,
@@ -367,12 +449,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerText: {
-    fontWeight: '600',
+    fontWeight: "600",
     fontSize: 16,
-    color: '#2E7D32',
+    color: "#2E7D32",
   },
   statusBadge: {
-    backgroundColor: '#C8E6C9',
+    backgroundColor: "#C8E6C9",
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 12,
@@ -380,35 +462,35 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
-    color: '#2E7D32',
-    fontWeight: '500',
+    color: "#2E7D32",
+    fontWeight: "500",
   },
   body: {
     padding: 16,
   },
   label: {
-    fontWeight: '600',
+    fontWeight: "600",
     marginTop: 12,
     marginBottom: 4,
-    color: '#333',
+    color: "#333",
   },
   dateInput: {
     borderWidth: 1,
-    borderColor: '#CCC',
+    borderColor: "#CCC",
     borderRadius: 8,
     padding: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
   dateText: {
-    fontWeight: '600',
-    color: '#2E7D32',
+    fontWeight: "600",
+    color: "#2E7D32",
   },
   input: {
     borderWidth: 1,
-    borderColor: '#CCC',
+    borderColor: "#CCC",
     borderRadius: 8,
     padding: 10,
     marginTop: 6,
@@ -419,12 +501,12 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#CCC',
-    backgroundColor: '#F5F5F5',
+    borderColor: "#CCC",
+    backgroundColor: "#F5F5F5",
     marginRight: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
   },
   squareImage: {
     width: 100,
@@ -436,20 +518,20 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#CCC',
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderColor: "#CCC",
+    backgroundColor: "#F5F5F5",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 10,
   },
   imagePlaceholder: {
-    color: '#AAA',
+    color: "#AAA",
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.95)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   modalImage: {
     width: screenWidth * 0.9,
@@ -457,7 +539,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   modalClose: {
-    position: 'absolute',
+    position: "absolute",
     top: 40,
     right: 20,
     zIndex: 2,
@@ -466,18 +548,18 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#4CAF50',
+    borderColor: "#4CAF50",
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 16,
   },
   captureButtonText: {
-    color: '#4CAF50',
-    fontWeight: '600',
+    color: "#4CAF50",
+    fontWeight: "600",
   },
   buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: 20,
     gap: 10,
   },
@@ -485,69 +567,69 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderWidth: 1,
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: "center",
     flex: 1,
   },
   saveButton: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#4CAF50',
+    backgroundColor: "#4CAF50",
+    borderColor: "#4CAF50",
   },
   cancelButton: {
-    backgroundColor: '#fff',
-    borderColor: '#ccc',
+    backgroundColor: "#fff",
+    borderColor: "#ccc",
   },
   saveButtonText: {
-    color: '#fff',
-    fontWeight: '600',
+    color: "#fff",
+    fontWeight: "600",
   },
   cancelButtonText: {
-    color: '#555',
-    fontWeight: '500',
+    color: "#555",
+    fontWeight: "500",
   },
   dropdownContainer: {
     borderWidth: 1,
-    borderColor: '#4CAF50',
+    borderColor: "#4CAF50",
     borderRadius: 8,
     marginTop: 6,
     marginBottom: 6,
-    overflow: 'hidden',
-    backgroundColor: '#F8FFF8',
+    overflow: "hidden",
+    backgroundColor: "#F8FFF8",
     minHeight: 50,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   disabledField: {
     borderWidth: 1,
-    borderColor: '#DDD',
-    backgroundColor: '#F5F5F5',
+    borderColor: "#DDD",
+    backgroundColor: "#F5F5F5",
     borderRadius: 8,
     padding: 12,
     marginVertical: 6,
   },
   disabledText: {
-    color: '#666',
+    color: "#666",
     fontSize: 15,
   },
   picker: {
     height: 54,
-    width: '100%',
-    color: '#222',
-    backgroundColor: 'transparent',
+    width: "100%",
+    color: "#222",
+    backgroundColor: "transparent",
   },
   modifyButton: {
     marginTop: 14,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#4CAF50',
+    borderColor: "#4CAF50",
     borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: '#fff',
+    alignItems: "center",
+    backgroundColor: "#fff",
   },
   buttonText: {
-    color: '#4CAF50',
-    fontWeight: '600',
+    color: "#4CAF50",
+    fontWeight: "600",
   },
   disabledButton: {
-    backgroundColor: '#A5D6A7',
-    borderColor: '#A5D6A7',
+    backgroundColor: "#A5D6A7",
+    borderColor: "#A5D6A7",
   },
 });

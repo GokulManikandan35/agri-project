@@ -160,22 +160,19 @@ export default function FertilizerPesticideForm({ seedVariety }) {
       
       // Prepare data to send to backend - including Base64 images
       const payload = {
-        date: date.toISOString(),
-        selectedType,
-        seedVariety,
+        date: date.toISOString().split("T")[0], // 'YYYY-MM-DD'
+        application_type: selectedType,         // Use snake_case to match model
         quantity,
-        photoBase64s,
-        isSaved: true,
-        formType: 'fertilizer-pesticide' // Add form type identifier
+        photo: photoBase64s[0] || "",           // Only send the first photo as 'photo'
       };
 
-      console.log("Preparing to send data to backend...");
+      console.log("Preparing to send data to backend...", JSON.stringify(payload, null, 2));
 
       // Send data to backend
       const response = await axios.post(
-        'http://4.247.169.244:8080/generate-qr/',
+        'http://4.247.169.244:8080/create_fertilizer/',
         payload,
-        { headers: { 'Content-Type': 'application/json' } }
+        { headers: { 'Content-Type': 'application/json' }, params: { id: 100 } }
       );
 
       console.log("Backend response status:", response.status);

@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Alert, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { Ionicons } from '@expo/vector-icons';
+import axios from 'axios';
+import * as Updates from 'expo-updates';
 
 export default function RootLayout() {
   const appState = useRef(AppState.currentState);
   const [appStateVisible, setAppStateVisible] = useState(appState.current);
   const [lastActive, setLastActive] = useState(Date.now());
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', handleAppStateChange);
@@ -63,9 +67,52 @@ export default function RootLayout() {
     setAppStateVisible(appState.current);
   };
 
+  const handleDeleteAll = async () => {
+    Alert.alert(
+      "Delete All Data",
+      "Are you sure you want to delete all data?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await axios.post('http://4.247.169.244:8080/clear_all_data/');
+              await AsyncStorage.clear();
+              Alert.alert("Success", "All data deleted.");
+              // Reload the app
+              await Updates.reloadAsync();
+            } catch (error) {
+              Alert.alert("Error", "Failed to delete data.");
+            } finally {
+              setDeleting(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <>
       <StatusBar style="dark" />
+      {/* Delete Icon */}
+      <View style={{
+        position: 'absolute',
+        top: 40,
+        right: 24,
+        zIndex: 1000,
+      }}>
+        <TouchableOpacity onPress={handleDeleteAll} disabled={deleting}>
+          {deleting ? (
+            <ActivityIndicator size="small" color="#e53935" />
+          ) : (
+            <Ionicons name="trash-outline" size={18} color="#e53935" />
+          )}
+        </TouchableOpacity>
+      </View>
       <Stack screenOptions={{ 
         headerShown: false, // This hides the header with the path
         animation: 'fade',

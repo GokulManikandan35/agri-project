@@ -37,6 +37,7 @@ export default function HomeScreen() {
           <View>
             <Text style={styles.welcomeText}>Welcome back,</Text>
             <Text style={styles.farmerText}>Munusamy</Text>
+            <Text style={styles.farmerID}>(FAR5949)</Text>
           </View>
         </View>
         <View style={styles.dateChip}>
@@ -92,6 +93,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
     color: "#222",
+  },
+    farmerID: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "green",
   },
   dateChip: {
     flexDirection: "row",

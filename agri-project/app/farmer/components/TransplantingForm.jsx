@@ -51,9 +51,9 @@ export default function TransplantingForm({ seedVariety, setSeedVariety }) {
         if (data) {
           const saved = JSON.parse(data);
           setDate(new Date(saved.date));
-          setSeedVariety(saved.seedVariety);
+          setSeedVariety(saved.seed_variety);
           setQuantity(saved.quantity);
-          setPhotoBase64s(saved.photoBase64s || []);
+          setPhotoBase64s(saved.photo ? [saved.photo] : []);
           setIsSaved(saved.isSaved);
           console.log("Loaded TransplantingFormData", saved);
         }
@@ -107,20 +107,19 @@ export default function TransplantingForm({ seedVariety, setSeedVariety }) {
 
       // Prepare data to send - including Base64 images
       const payload = {
-        date: date.toISOString(), // convert to string
-        seedVariety,
+        date: date.toISOString().split("T")[0], // 'YYYY-MM-DD'
+        seed_variety: seedVariety,              // Use snake_case to match model
         quantity,
-        photoBase64s, // Now sending the array of Base64 strings
-        isSaved: true, // Mark as saved upon successful save
+        photo: photoBase64s[0] || "",           // Only send the first photo as 'photo'
       };
 
       console.log("Payload being sent to backend:", JSON.stringify(payload, null, 2)); // Log the payload just before sending
 
       // Send data to backend
       const response = await axios.post(
-        'http://4.247.169.244:8080/generate-qr/',
+        'http://4.247.169.244:8080/create_transplanting/',
         payload, // Pass the payload object directly
-        { headers: { 'Content-Type': 'application/json' } } // Explicitly set Content-Type
+        { headers: { 'Content-Type': 'application/json' }, params: { id: 100 },} // Explicitly set Content-Type
       );
 
       console.log("Backend response status:", response.status); // Log response status
@@ -130,7 +129,7 @@ export default function TransplantingForm({ seedVariety, setSeedVariety }) {
       // Ensure you save photoBase64s instead of photoUris
       await AsyncStorage.setItem(
         'TransplantingFormData',
-        JSON.stringify({ ...payload, photoBase64s: photoBase64s }) // Save the Base64 data
+        JSON.stringify({ ...payload }) // Save the Base64 data
       );
 
       setIsSaved(true); // Update isSaved state after successful save and AsyncStorage update
@@ -218,7 +217,7 @@ export default function TransplantingForm({ seedVariety, setSeedVariety }) {
   };
 
   const today = new Date();
-  const isCompleted = isSameOrBefore(date, today);
+  const isCompleted = isSaved && isSameOrBefore(date, today);
   const isPending = !isCompleted;
 
   return (

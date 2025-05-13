@@ -115,21 +115,18 @@ export default function HarvestDryingPackingForm({ seedVariety }) {
       
       // Prepare data for backend
       const payload = {
-        date: date.toISOString(),
-        seedVariety: seedVariety,
-        photoBase64s: photoBase64s,
-        records: [...records, newRecord],
-        isSaved: true,
-        formType: 'harvest-drying-packing' // Add form type identifier
+        seed_variety: seedVariety,                        // Use snake_case to match model
+        date: date.toISOString().split("T")[0],           // 'YYYY-MM-DD'
+        photo: photoBase64s[0] || "",                     // Only send the first photo as 'photo'
       };
 
-      console.log("Preparing to send data to backend...");
+      console.log("Preparing to send data to backend...", JSON.stringify(payload, null, 2));
       
       // Send data to backend
       const response = await axios.post(
-        'http://4.247.169.244:8080/generate-qr/',
+        'http://4.247.169.244:8080/create_harverst/',
         payload,
-        { headers: { 'Content-Type': 'application/json' } }
+        { headers: { 'Content-Type': 'application/json' }, params: { id: 100 } }
       );
 
       console.log("Backend response status:", response.status);
@@ -139,7 +136,7 @@ export default function HarvestDryingPackingForm({ seedVariety }) {
       setRecords([...records, newRecord]);
       setIsSaved(true);
       
-      // Save to AsyncStorage only upon successful backend response
+      // Save to AsyncStorage using the same keys
       await AsyncStorage.setItem('HarvestDryingPackingFormData', JSON.stringify(payload));
       
       Alert.alert("Success", "Harvest event recorded successfully.");

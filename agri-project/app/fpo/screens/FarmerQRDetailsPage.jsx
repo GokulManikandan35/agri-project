@@ -9,7 +9,7 @@ export default function FarmerQRDetailsPage() {
   useEffect(() => {
     async function fetchQR() {
       try {
-        const res = await fetch('http://4.247.169.244:8080/generate-qr/');
+        const res = await fetch('http://4.247.169.244:8080/get_data/?id=100');
         const data = await res.json();
         setQrBase64(data.qr_code);
         setRedirectUrl(data.url);

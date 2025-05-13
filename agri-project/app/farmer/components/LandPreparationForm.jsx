@@ -30,6 +30,7 @@ export default function LandPreparationForm() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [fertilizer, setFertilizer] = useState("");
   const [quantity, setQuantity] = useState("");
+  const [cultivationArea, setCultivationArea] = useState(""); // NEW
   // photoUris will now store Base64 strings instead of URIs
   const [photoBase64s, setPhotoBase64s] = useState([]);
   const [isSaved, setIsSaved] = useState(false);
@@ -72,6 +73,7 @@ export default function LandPreparationForm() {
           setSelectedDate(new Date(saved.selectedDate));
           setFertilizer(saved.fertilizer);
           setQuantity(saved.quantity);
+          setCultivationArea(saved.cultivation_area || ""); // NEW
           // Load Base64 strings into photoBase64s
           setPhotoBase64s(saved.photoBase64s || []);
           setIsSaved(saved.isSaved);
@@ -106,12 +108,17 @@ export default function LandPreparationForm() {
       if (!quantity || isNaN(parseFloat(quantity))) {
         throw new Error("Please enter a valid numeric quantity.");
       }
+      if (!cultivationArea) {
+        throw new Error("Please enter the cultivation area.");
+      }
 
       // Prepare data to send - match backend field names
       const payload = {
+        farmer_name: "munusamy (FAR5949)", // Placeholder, replace with actual farmer name
         date: selectedDate.toISOString().split("T")[0], // 'YYYY-MM-DD'
-        fertilizer,
+        fertilizer: fertilizer.substring(0, 100), // Trim to 100 chars
         quantity,
+        cultivation_area: cultivationArea, // NEW
         photo: photoBase64s[0] || "", // Only send the first photo as 'photo'
       };
 
@@ -182,6 +189,7 @@ export default function LandPreparationForm() {
             setSelectedDate(new Date());
             setFertilizer("");
             setQuantity("");
+            setCultivationArea(""); // Reset cultivation area
             setPhotoBase64s([]); // Reset Base64 array
             setIsSaved(false);
             setExpanded(false);
@@ -356,6 +364,15 @@ export default function LandPreparationForm() {
                 keyboardType="numeric"
                 value={quantity}
                 onChangeText={setQuantity}
+              />
+
+              <Text style={styles.label}>Cultivation Area (Acre/Hectare)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter cultivation area"
+                value={cultivationArea}
+                onChangeText={setCultivationArea}
+                keyboardType="default"
               />
 
               <Text style={styles.label}>Photos (Geo-tagged)</Text>
