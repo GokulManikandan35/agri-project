@@ -109,7 +109,7 @@ export default function RootLayout() {
           {deleting ? (
             <ActivityIndicator size="small" color="#e53935" />
           ) : (
-            <Ionicons name="trash-outline" size={18} color="#e53935" />
+            <Ionicons name="trash-outline" size={18} color="red" />
           )}
         </TouchableOpacity>
       </View>

@@ -69,6 +69,7 @@ export default function FertilizerPesticideForm({ seedVariety }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [isLoading, setIsLoading] = useState(true); // Add loading state
+  const [fertilizerName, setFertilizerName] = useState(''); // Add a new state for fertilizer name
 
   // Use the custom accordion animation hook
   const { rotateArrow, getBodyStyle } = useAccordionAnimation(expanded);
@@ -163,6 +164,7 @@ export default function FertilizerPesticideForm({ seedVariety }) {
         date: date.toISOString().split("T")[0], // 'YYYY-MM-DD'
         application_type: selectedType,         // Use snake_case to match model
         quantity,
+        name: fertilizerName,                   // <-- Send fertilizer name as 'name'
         photo: photoBase64s[0] || "",           // Only send the first photo as 'photo'
       };
 
@@ -347,6 +349,19 @@ export default function FertilizerPesticideForm({ seedVariety }) {
               )}
 
               <Text style={styles.label}>
+                {selectedType === "Pesticide" ? "Pesticide Name" : "Fertilizer Name"}
+              </Text>
+              <TextInput
+                value={fertilizerName}
+                onChangeText={setFertilizerName}
+                style={styles.input}
+                placeholder={
+                  selectedType === "Pesticide"
+                    ? "Enter pesticide name"
+                    : "Enter fertilizer name"
+                }
+              />
+              <Text style={styles.label}>
                 Quantity ({selectedType === "Pesticide" ? "ml/gm" : "Kg"})
               </Text>
               <TextInput
@@ -356,6 +371,7 @@ export default function FertilizerPesticideForm({ seedVariety }) {
                 keyboardType="numeric"
                 placeholder="Enter quantity"
               />
+
 
               <Text style={styles.label}>Photo (Geo‑tagged)</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
