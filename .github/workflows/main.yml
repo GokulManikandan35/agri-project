@@ -1,0 +1,29 @@
+name: Expo Build (Android)
+on:
+  push:
+    branches:
+      - master  # or your default branch
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Install dependencies # <-- Add working-directory here
+        run: npm install
+        working-directory: ./code # <--- REPLACE THIS with the actual path
+
+      - name: EAS build Android (development) # <-- Add working-directory here too
+        run: eas build --platform android --profile development --non-interactive
+        working-directory: ./android # <--- REPLACE THIS with the actual path
