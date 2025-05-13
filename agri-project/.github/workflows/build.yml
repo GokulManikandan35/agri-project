@@ -1,5 +1,4 @@
 name: Expo Build (Android)
-
 on:
   push:
     branches:
@@ -9,7 +8,6 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -22,8 +20,10 @@ jobs:
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
-      - name: Install dependencies
+      - name: Install dependencies # <-- Add working-directory here
         run: npm install
+        working-directory: ./node # <--- REPLACE THIS with the actual path
 
-      - name: EAS build Android (development)
+      - name: EAS build Android (development) # <-- Add working-directory here too
         run: eas build --platform android --profile development --non-interactive
+        working-directory: ./android # <--- REPLACE THIS with the actual path
